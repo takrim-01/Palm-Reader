@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palm Reading using Grok AI</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link rel="stylesheet" href="styles2.css">
+</head>
+<body>
+<div class="container">
+  <h1>🔮 Palm Reading using Grok AI</h1>
+  <p class="subtitle">Traditional palmistry & astrology — for entertainment purposes only</p>
+
+  <div class="glass">
+    <label for="name">Name (optional)</label>
+    <input type="text" id="name" placeholder="Your name">
+    <label for="dob">Date of Birth (required)</label>
+    <input type="date" id="dob" required>
+  </div>
+
+  <div class="glass">
+    <button id="openCameraBtn">📷 Open Camera</button>
+    <video id="video" autoplay playsinline></video>
+    <button id="captureBtn" style="display:none;">🖐 Capture Palm</button>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <img id="preview" class="preview" alt="Captured palm preview">
+    <input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none; margin-top:10px;">
+  </div>
+
+  <button id="generateBtn" disabled>✨ Generate Palm Reading</button>
+  <div class="spinner" id="spinner"></div>
+  <div id="errorBox"></div>
+
+  <div id="printArea">
+    <div class="palm-photo-block" id="palmPhotoBlock">
+      <img id="palmPhotoImg" src="" alt="Captured palm photo">
+      <div class="cap">Palm scanned for this reading</div>
+    </div>
+    <div id="results"></div>
+
+    <div class="glass share-box" id="shareBox">
+      <button id="printBtn">🖨️ Print This Reading</button>
+      <div class="row">
+        <div id="qrcode"></div>
+        <div class="qr-note" id="qrNote">Scan for a soft copy on your phone.</div>
+      </div>
+    </div>
+
+    <p class="disclaimer">This reading is based on traditional palmistry and astrology for entertainment purposes only and is not scientifically validated.</p>
+  </div>
+</div>
+
+<script src="script2.js"></script>
+</body>
+</html>
