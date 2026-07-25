@@ -9,17 +9,12 @@ import {
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const MODEL = "gemini-3.5-flash-lite";
-const IMAGE_MODEL = "gemini-2.5-flash-image";
-
-const IMAGE_API_URL =
-  `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${API_KEY}`;
 
 const API_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
 
 let stream = null;
 let capturedImage = null;
-let ghibliImage = null;
 
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -73,62 +68,17 @@ function stopCamera() {
   video.classList.remove('active');
 }
 
-async function ghibliStylize(base64DataUrl) {
-  const base64Image = base64DataUrl.split(",")[1];
-
-  const response = await fetch(IMAGE_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          {
-            text: "Redraw this photo of a hand as a warm, hand-painted Studio-Ghibli-inspired anime illustration. Keep the hand's shape, pose, and visible palm lines clearly recognizable. Soft painterly lighting, gentle watercolor-like palette, whimsical background."
-          },
-          { inline_data: { mime_type: "image/jpeg", data: base64Image } }
-        ]
-      }],
-      generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-    })
-  });
-
-  if (!response.ok) throw new Error(await response.text());
-
-  const data = await response.json();
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  const imgPart = parts.find(p => p.inline_data || p.inlineData);
-  const inline = imgPart?.inline_data || imgPart?.inlineData;
-  if (!inline) throw new Error("No stylized image returned.");
-
-  return `data:${inline.mime_type || inline.mimeType};base64,${inline.data}`;
-}
-
-async function stylizeCurrentPalm() {
-  if (!capturedImage) return;
-  ghibliImage = null;
-  preview.classList.add('stylizing');
-  try {
-    ghibliImage = await ghibliStylize(capturedImage);
-    preview.src = ghibliImage;
-  } catch (err) {
-    console.warn("Ghibli stylization failed, keeping original photo:", err.message);
-  } finally {
-    preview.classList.remove('stylizing');
-  }
-}
-
 function capturePalm() {
   const ctx = canvas.getContext('2d');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  capturedImage = canvas.toDataURL('image/jpeg', 0.9);
+  capturedImage = canvas.toDataURL('image/jpeg', 0.5);
   preview.src = capturedImage;
   preview.classList.add('active');
   captureBtn.style.display = 'none';
   stopCamera();
   generateBtn.disabled = false;
-  stylizeCurrentPalm();
 }
 
 fileFallback.addEventListener('change', (e) => {
@@ -140,7 +90,6 @@ fileFallback.addEventListener('change', (e) => {
     preview.src = capturedImage;
     preview.classList.add('active');
     generateBtn.disabled = false;
-    stylizeCurrentPalm();
   };
   reader.readAsDataURL(file);
 });
@@ -189,29 +138,59 @@ function splitList(str) {
     .filter(Boolean);
 }
 
+// Extracts percentage scores from the "Percentage Scores" section, e.g.
+// "Health: 82%" -> { health: 82 }. Values are clamped to 0-100.
+function parseScores(text) {
+  const block = text.match(/#{1,3}\s*Percentage Scores\s*\n([\s\S]*?)(?=\n#{1,3}\s|$)/i);
+  const scores = {};
+  if (block) {
+    block[1].split('\n').forEach(line => {
+      const m = line.match(/([A-Za-z]+)\s*[:\-]\s*(\d{1,3})/);
+      if (m) scores[m[1].toLowerCase()] = Math.min(100, parseInt(m[2], 10));
+    });
+  }
+  return scores;
+}
+
+// Renders a single circular percentage stat (label + ring).
+function renderStat(label, value) {
+  const pct = value || 0;
+  return `
+    <div class="stat-item">
+      <div class="stat-circle" style="--pct:${pct}">
+        <span class="stat-value">${pct}%</span>
+      </div>
+      <span class="stat-label">${label}</span>
+    </div>
+  `;
+}
+
 // ---------- Reading render ----------
 
 function renderResults(text) {
   const s = parseReading(text);
-    console.log('Parsed sections:', s);
+  const scores = parseScores(text);
+  console.log('Parsed sections:', s, scores);
 
   resultsDiv.innerHTML = `
     <div class="reading-card">
       <div class="reading-header">
         <div class="mark">NAM</div>
         <div class="tag">Palm &amp; Astrology Readings</div>
-        <h2 class="zodiac">${s['zodiac sign'] || ''}</h2>
       </div>
 
       <p class="disclaimer-top">${s['entertainment disclaimer'] || ''}</p>
 
-      <div class="reading-overview">
-        <h3>Palm Overview</h3>
-        <p>${mdToHtml(s['palm overview'] || '')}</p>
+      <div class="stats-row">
+        ${renderStat('Health', scores['health'])}
+        ${renderStat('Wealth', scores['wealth'])}
+        ${renderStat('Love', scores['love'])}
+        ${renderStat('Luck', scores['luck'])}
+        ${renderStat('Career', scores['career'])}
       </div>
 
       <div class="reading-grid">
-        ${['personality', 'career', 'finance', 'health'].map(key => `
+        ${['intuition', 'inner peace'].map(key => `
           <div class="reading-tile">
             <h4>${key.charAt(0).toUpperCase() + key.slice(1)}</h4>
             <p>${mdToHtml(s[key] || '')}</p>
@@ -221,15 +200,15 @@ function renderResults(text) {
 
       <div class="lucky-strip">
         <div class="lucky-group">
-          <span class="lucky-label">Numbers</span>
+          <span class="lucky-label">Lucky Numbers</span>
           <div class="chips">${splitList(s['lucky numbers']).map(n => `<span class="chip">${n}</span>`).join('')}</div>
         </div>
         <div class="lucky-group">
-          <span class="lucky-label">Colors</span>
+          <span class="lucky-label">Lucky Colors</span>
           <div class="chips">${splitList(s['lucky colors']).map(c => `<span class="chip">${c}</span>`).join('')}</div>
         </div>
         <div class="lucky-group">
-          <span class="lucky-label">Days</span>
+          <span class="lucky-label">Lucky Days</span>
           <div class="chips">${splitList(s['lucky days']).map(d => `<span class="chip">${d}</span>`).join('')}</div>
         </div>
       </div>
@@ -243,7 +222,6 @@ function renderResults(text) {
     </div>
   `;
 }
-
 // ---------- QR / soft copy sharing ----------
 
 // Makes a small, heavily compressed square thumbnail so a low-res version
@@ -325,21 +303,9 @@ function drawQrOrThrow(qrEl, url) {
 
 async function renderShareBlock(name, dob, fullText) {
   const shareBox = document.getElementById('shareBox');
-  const qrEl = document.getElementById('qrcode');
   const qrNote = document.getElementById('qrNote');
-  qrEl.innerHTML = '';
   shareBox.classList.add('active');
-
-  // Note: embedding even a small photo thumbnail pushes the QR code to a much
-  // higher density (more, smaller squares), which becomes unreliable to scan
-  // off a screen. Text-only keeps the code large and easy to read every time.
-  try {
-    drawQrOrThrow(qrEl, buildSoftCopyUrl(name, dob, fullText, null));
-    qrNote.textContent = "Scan for a soft copy on your phone. This carries your name, sign, and closing summary — your palm photo and the full reading stay here on screen.";
-  } catch (textOnlyErr) {
-    qrEl.innerHTML = '<div style="width:220px;height:220px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#1e0f3c;text-align:center;padding:8px;">QR unavailable</div>';
-    qrNote.textContent = "Soft copy QR couldn't be generated this time — the full reading is still shown on screen and can be printed.";
-  }
+  qrNote.textContent = "Scan for a soft copy on your phone. This carries your name, sign, and closing summary — your palm photo and the full reading stay here on screen.";
 }
 
 document.getElementById('printBtn').addEventListener('click', () => window.print());
@@ -356,7 +322,15 @@ async function generateReading() {
   generateBtn.disabled = true;
   openCameraBtn.disabled = true;
   spinner.classList.add('active');
-  resultsDiv.innerHTML = '';
+  // Show loading message immediately
+resultsDiv.innerHTML = `
+  <div class="reading-card">
+    <div style="text-align: center; padding: 40px 20px;">
+      <h3 style="margin: 0 0 10px 0;">✨ Analyzing your palm...</h3>
+      <p style="opacity: 0.7; font-size: 14px; margin: 0;">This usually takes 3-5 seconds</p>
+    </div>
+  </div>
+`;
   document.getElementById('shareBox').classList.remove('active');
   document.getElementById('qrcode').innerHTML = '';
   document.getElementById('palmPhotoBlock').classList.remove('active');
@@ -382,23 +356,19 @@ Use these headings only:
 
 # Entertainment Disclaimer
 
-# Palm Overview
+# Intuition
 
-# Zodiac Sign
-
-# Personality
-
-# Career
+# Inner Peace
 
 # Finance
-
-# Health
 
 # Lucky Numbers
 
 # Lucky Colors
 
 # Lucky Days
+
+# Percentage Scores
 
 # Spiritual Guidance
 
@@ -411,16 +381,23 @@ Use these headings only:
 * Base all interpretations on traditional palmistry and astrology. If palm or birth details are unavailable, clearly state that the reading is based only on the information provided.
 * Never claim certainty or guarantee future events.
 * Do not provide medical, legal, financial, or psychological advice, or analyze specific palm lines such as the Head Line or Life Line.
-* For **Career**, **Finance**, and **Health**, describe traditional tendencies and areas of focus instead of predicting outcomes.
-* **Lucky Numbers:** Exactly 3 unique numbers.
-* **Lucky Colors:** Exactly 2 specific colors (e.g., Forest Green, Sapphire Blue, Burnt Orange).
+* **Lucky Numbers:** Exactly 2 unique numbers.
+* **Lucky Colors:** Exactly 1 specific colors (e.g., Forest Green, Sapphire Blue, Burnt Orange).
 * **Lucky Days:** Exactly 1 weekdays.
-* **Spiritual Guidance:** One practical suggestion inspired by traditional palmistry or astrology.
+* **Intuition, Inner Peace:** Each in 1 sentence only, using simple, everyday language (no jargon or flowery wording).
+  - Intuition: one trait about their gut-instinct in decisions make it only one line only.
+  - Inner Peace: one habit or mindset that brings them calm.
+* **Percentage Scores:** Provide a percentage between 40 and 95 for each of Health, Wealth, Love, Luck, and Career, reflecting the overall tone of the reading. Format each on its own line exactly as "Label: NN%" with no extra commentary or explanation.
+* **Spiritual Guidance:** One practical suggestion inspired by traditional palmistry or astrology(1-2 line sentence, simple language).
 
 At the very end, include this disclaimer:
 
 "This reading follows traditional palmistry and astrology interpretations and is intended for entertainment purposes only. Your choices, actions, and circumstances play a much greater role in shaping your future than any reading."
 `;
+
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
   try {
     // Remove "data:image/jpeg;base64," prefix
@@ -428,6 +405,7 @@ At the very end, include this disclaimer:
 
     const response = await fetch(API_URL, {
       method: "POST",
+      signal: controller.signal,  // Add timeout support
       headers: {
         "Content-Type": "application/json"
       },
@@ -451,6 +429,8 @@ At the very end, include this disclaimer:
       })
     });
 
+    clearTimeout(timeoutId);  // Clear timeout if successful
+
     if (!response.ok) {
       const err = await response.text();
       throw new Error(err);
@@ -467,20 +447,19 @@ At the very end, include this disclaimer:
     renderResults(text);
 
     const docRef = await addDoc(
-  collection(db, "palm-reading"),
-  {
-    name,
-    dob,
-    reading: text,
-    image: capturedImage,
-    imageGhibli: ghibliImage || null,
-    createdAt: serverTimestamp()
-  }
-);
+      collection(db, "palm-reading"),
+      {
+        name,
+        dob,
+        reading: text,
+        image: capturedImage,
+        createdAt: serverTimestamp()
+      }
+    );
 
     console.log("Saved to Firestore:", docRef.id);
 
-    document.getElementById('palmPhotoImg').src = ghibliImage || capturedImage;
+    document.getElementById('palmPhotoImg').src = capturedImage;
     document.getElementById('palmPhotoBlock').classList.add('active');
 
     const BASE_URL =
@@ -498,7 +477,13 @@ At the very end, include this disclaimer:
       "Scan this QR code to view the full palm reading on any device.";
 
   } catch (err) {
-    showError(`Error: ${err.message}`);
+    clearTimeout(timeoutId);  // Clear timeout on error
+
+    if (err.name === 'AbortError') {
+      showError('Request took too long (over 30 seconds). Please check your internet and try again.');
+    } else {
+      showError(`Error: ${err.message}`);
+    }
   } finally {
     spinner.classList.remove('active');
     generateBtn.disabled = false;

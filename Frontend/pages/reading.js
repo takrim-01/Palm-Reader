@@ -36,7 +36,7 @@ async function loadReading() {
         data.reading.replace(/\n/g, "<br>");
 
     document.getElementById("capturePalm").src =
-    data.imageGhibli || data.image;
+        data.image;
     document.getElementById("palmPhotoBlock").style.display = "block";
 
 }
