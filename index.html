@@ -8,11 +8,49 @@
 <link rel="stylesheet" href="Frontend/style.css">
 </head>
 <body>
+
+<div class="sky" aria-hidden="true"></div>
+<svg class="astrolabe" viewBox="0 0 400 400" aria-hidden="true">
+  <circle cx="200" cy="200" r="188" fill="none" stroke="#c9a227" stroke-width="1"/>
+  <circle cx="200" cy="200" r="150" fill="none" stroke="#c9a227" stroke-width="1"/>
+  <circle cx="200" cy="200" r="112" fill="none" stroke="#c9a227" stroke-width="0.6"/>
+  <g stroke="#c9a227" stroke-width="1">
+    <line x1="200" y1="12" x2="200" y2="40"/>
+    <line x1="200" y1="360" x2="200" y2="388"/>
+    <line x1="12" y1="200" x2="40" y2="200"/>
+    <line x1="360" y1="200" x2="388" y2="200"/>
+  </g>
+  <g stroke="#c9a227" stroke-width="0.5">
+    <!-- degree ticks -->
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(30 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(60 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(120 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(150 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(210 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(240 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(300 200 200)"/>
+    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(330 200 200)"/>
+  </g>
+  <circle cx="200" cy="200" r="4" fill="#c9a227"/>
+</svg>
+
+<div class="rain" id="rain" aria-hidden="true"></div>
+
 <div class="container">
-  <h1>🔮 Palm Reading using Grok AI</h1>
-  <p class="subtitle">Traditional palmistry & astrology — for entertainment purposes only</p>
+
+  <header class="masthead">
+    <p class="kicker">Est. by lamplight &amp; starlight</p>
+    <h1>Palm Reading</h1>
+    <p class="subtitle">Traditional palmistry &amp; astrology — for entertainment purposes only</p>
+  </header>
 
   <div class="glass">
+    <div class="step-head">
+      <span class="deg">01</span>
+      <h2>Your details</h2>
+    </div>
+    <p class="step-note">The chart needs your name and birth date to draw a reading.</p>
+
     <label for="name">Name</label>
     <input type="text" id="name" placeholder="Your name" required>
     <label for="dob">Date of Birth (required)</label>
@@ -20,15 +58,38 @@
   </div>
 
   <div class="glass">
-    <button id="openCameraBtn">📷 Open Camera</button>
-    <video id="video" autoplay playsinline></video>
-    <button id="captureBtn" style="display:none;">🖐 Capture Palm</button>
-    <canvas id="canvas" style="display:none;"></canvas>
-    <img id="preview" class="preview" alt="Captured palm preview">
-    <input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none; margin-top:10px;">
+    <div class="step-head">
+      <span class="deg">02</span>
+      <h2>Capture your palm</h2>
+    </div>
+    <p class="step-note">Hold your palm flat and well-lit, then take the photo.</p>
+
+    <button id="openCameraBtn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+  Open Camera
+</button>
+
+<div class="video-wrap" style="position:relative; display:inline-block;">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="overlay" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+</div>
+
+<p id="handStatus" class="step-note">Show your palm to the camera</p>
+
+<div id="captureControls" style="display:none; gap:10px;">
+  <button id="takeBtn" disabled>Take Photo</button>
+</div>
+<button id="retakeBtn" style="display:none;">Retake</button>
+
+<canvas id="canvas" style="display:none;"></canvas>
+<img id="preview" class="preview" alt="Captured palm preview">
+<input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none; margin-top:10px;">
   </div>
 
-  <button id="generateBtn" disabled>✨ Generate Palm Reading</button>
+  <button id="generateBtn" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4M12 16v4M4 12h4M16 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M17.7 6.3l-2.8 2.8M9.1 14.9l-2.8 2.8"/></svg>
+    Generate Palm Reading
+  </button>
   <div class="spinner" id="spinner"></div>
   <div id="errorBox"></div>
 
@@ -40,7 +101,10 @@
     <div id="results"></div>
 
     <div class="glass share-box" id="shareBox">
-      <button id="printBtn">🖨️ Print This Reading</button>
+      <button id="printBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+        Print This Reading
+      </button>
       <div class="row">
         <div id="qrcode"></div>
         <div class="qr-note" id="qrNote">Scan for a soft copy on your phone.</div>
@@ -49,8 +113,17 @@
 
     <p class="disclaimer">This reading is based on traditional palmistry and astrology for entertainment purposes only and is not scientifically validated.</p>
   </div>
-</div>
 
+  <button id="clearAllBtn" type="button">Clear All</button>
+
+  <footer class="brand-tag">
+    <div class="mark">OBSERVATORY</div>
+    <div class="tag">Palmistry &amp; Astrology Atelier</div>
+  </footer>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script type="module" src="Frontend/script.js"></script>
 </body>
 </html>

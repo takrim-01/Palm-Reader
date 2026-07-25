@@ -1,44 +1,199 @@
-import { db,doc,getDoc } from "/firebase/firebase.js";
-
+import { db, doc, getDoc } from "/firebase/firebase.js";
 
 const params = new URLSearchParams(window.location.search);
-
 const id = params.get("id");
 
+const errorBox = document.getElementById('errorBox');
+const palmPhotoBlock = document.getElementById('palmPhotoBlock');
+const palmPhotoImg = document.getElementById('palmPhotoImg');
+const resultsDiv = document.getElementById('results');
+const shareBox = document.getElementById('shareBox');
+const printBtn = document.getElementById('printBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+
+function showError(msg) {
+  errorBox.innerHTML = `<div class="error">${msg}</div>`;
+}
+
+// ---------- same parsing helpers as script.js, kept in sync ----------
+
+function mdToHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/^### (.*$)/gim, '<h4>$1</h4>')
+    .replace(/^## (.*$)/gim, '<h3>$1</h3>')
+    .replace(/^# (.*$)/gim, '<h2>$1</h2>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+
+function parseReading(text) {
+  const sections = {};
+  const regex = /#{1,3}\s*([^\n]+)\n([\s\S]*?)(?=\n#{1,3}\s|$)/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const key = m[1].replace(/[:*_]/g, '').trim().toLowerCase();
+    sections[key] = m[2].trim();
+  }
+  return sections;
+}
+
+function splitList(str) {
+  if (!str) return [];
+  return str
+    .replace(/[*_]/g, '')
+    .split(/\n|,/)
+    .map(s => s
+      .trim()
+      .replace(/^[-*]\s*/, '')
+      .replace(/^\d+[.)]\s*/, '')
+      .trim()
+    )
+    .filter(Boolean);
+}
+
+function parseScores(text) {
+  const block = text.match(/#{1,3}\s*Percentage Scores\s*\n([\s\S]*?)(?=\n#{1,3}\s|$)/i);
+  const scores = {};
+  if (block) {
+    block[1].split('\n').forEach(line => {
+      const m = line.match(/([A-Za-z]+)\s*[:\-]\s*(\d{1,3})/);
+      if (m) scores[m[1].toLowerCase()] = Math.min(100, parseInt(m[2], 10));
+    });
+  }
+  return scores;
+}
+
+function renderStat(label, value) {
+  const pct = value || 0;
+  return `
+    <div class="bar-row">
+      <span class="bar-label">${label}</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${pct}%"></div>
+      </div>
+      <span class="bar-value">${pct}%</span>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ---------- render the same card layout as script.js ----------
+
+function renderResults(name, dob, text) {
+  const s = parseReading(text);
+  const scores = parseScores(text);
+
+  resultsDiv.innerHTML = `
+    <div class="reading-card">
+      <div class="reading-header">
+        <div class="mark">NAM</div>
+        <div class="tag">Palm &amp; Astrology Readings</div>
+      </div>
+
+      <div class="person-name">${escapeHtml(name)}</div>
+      <div class="person-dob">DOB: ${escapeHtml(dob)}</div>
+
+      <p class="disclaimer-top">${s['entertainment disclaimer'] || ''}</p>
+
+      <section class="section-block">
+        <h3 class="section-title">Overview</h3>
+        <div class="bars-list">
+          ${renderStat('Health', scores['health'])}
+          ${renderStat('Wealth', scores['wealth'])}
+          ${renderStat('Love', scores['love'])}
+          ${renderStat('Luck', scores['luck'])}
+          ${renderStat('Career', scores['career'])}
+        </div>
+      </section>
+
+      <section class="section-block">
+        <h3 class="section-title">Lucky Details</h3>
+        <div class="detail-rows">
+          <div class="detail-row">
+            <span class="detail-key">Numbers</span>
+            <span class="detail-val">${splitList(s['lucky numbers']).join(', ')}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-key">Color</span>
+            <span class="detail-val">${splitList(s['lucky colors']).join(', ')}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-key">Day</span>
+            <span class="detail-val">${splitList(s['lucky days']).join(', ')}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-block">
+        <h3 class="section-title">Spiritual Guidance</h3>
+        <p class="guidance-text">${mdToHtml(s['spiritual guidance'] || '')}</p>
+      </section>
+
+      <p class="disclaimer-bottom">${s['closing disclaimer'] || ''}</p>
+    </div>
+  `;
+}
+
+// ---------- load + wire up ----------
+
 if (!id) {
-
-    document.body.innerHTML = "<h2>No Reading Found</h2>";
-
+  showError('No reading found — this link is missing an id.');
+} else {
+  loadReading();
 }
 
 async function loadReading() {
-
+  try {
     const docRef = doc(db, "palm-reading", id);
-
     const snap = await getDoc(docRef);
 
     if (!snap.exists()) {
-
-        document.body.innerHTML = "<h2>Reading Not Found</h2>";
-
-        return;
-
+      showError('This reading could not be found. The link may be invalid or expired.');
+      return;
     }
 
     const data = snap.data();
+    renderResults(data.name, data.dob, data.reading);
 
-    document.getElementById("personName").textContent = data.name;
+    if (data.image) {
+      palmPhotoImg.src = data.image;
+      palmPhotoBlock.classList.add('active');
+    }
 
-    document.getElementById("personDob").textContent =
-        "DOB : " + data.dob;
-
-    document.getElementById("reading").innerHTML =
-        data.reading.replace(/\n/g, "<br>");
-
-    document.getElementById("capturePalm").src =
-        data.image;
-    document.getElementById("palmPhotoBlock").style.display = "block";
-
+    shareBox.classList.add('active');
+  } catch (err) {
+    showError('Something went wrong loading this reading. Please try again.');
+    console.error(err);
+  }
 }
 
-loadReading();
+printBtn.addEventListener('click', () => window.print());
+
+downloadBtn.addEventListener('click', async () => {
+  downloadBtn.disabled = true;
+  const original = downloadBtn.textContent;
+  downloadBtn.textContent = 'Preparing…';
+  try {
+    const canvas = await html2canvas(document.getElementById('printArea'), {
+      backgroundColor: '#0b0f1e',
+      scale: 2,
+      useCORS: true
+    });
+    const link = document.createElement('a');
+    link.download = 'palm-reading.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    showError('Could not generate the download. Please try the print button instead.');
+    console.error(err);
+  } finally {
+    downloadBtn.disabled = false;
+    downloadBtn.textContent = original;
+  }
+});

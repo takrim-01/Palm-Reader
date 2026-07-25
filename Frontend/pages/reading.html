@@ -1,48 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Palm Reading</title>
-
-    <link rel="stylesheet" href="../pages/reading.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Palm Reading</title>
+<link rel="stylesheet" href="/Frontend/style.css">
 </head>
-
 <body>
 
+<div class="sky" aria-hidden="true"></div>
+
 <div class="container">
+  <header class="masthead">
+    <p class="kicker">Est. by lamplight &amp; starlight</p>
+    <h1>Palm Reading</h1>
+  </header>
 
-    <h1>🔮 Palm Reading Report</h1>
+  <div id="errorBox"></div>
 
-    <div id="errorBox"></div>
-
-    <div id="spinner" style="display: none;">Loading your reading...</div>
-
-    <div id="palmPhotoBlock" style="display: none;">
-        <img id="capturePalm" alt="Palm Reading">
+  <div id="printArea">
+    <div class="palm-photo-block" id="palmPhotoBlock">
+      <img id="palmPhotoImg" src="" alt="Captured palm photo">
+      <div class="cap">Palm scanned for this reading</div>
     </div>
 
-    <div class="card">
+    <div id="results"></div>
 
-        <h2 id="personName"></h2>
-
-        <p id="personDob"></p>
-
-        <hr>
-
-        <div id="reading"></div>
-
+    <div class="glass share-box" id="shareBox">
+      <button id="printBtn">Print This Reading</button>
+      <button id="downloadBtn">Download as Image</button>
     </div>
 
-    <div id="shareBox" style="display: none;">
-        <button id="printBtn">🖨️ Print Reading</button>
-    </div>
-
+    <p class="disclaimer">This reading is based on traditional palmistry and astrology for entertainment purposes only and is not scientifically validated.</p>
+  </div>
 </div>
 
-<script type="module" src="../pages/reading.js"></script>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script type="module" src="reading.js"></script>
 </body>
-
 </html>

@@ -27,6 +27,94 @@ const errorBox = document.getElementById('errorBox');
 const resultsDiv = document.getElementById('results');
 const fileFallback = document.getElementById('fileFallback');
 
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const handStatus = document.getElementById('handStatus');
+const captureControls = document.getElementById('captureControls');
+const takeBtn = document.getElementById('takeBtn');
+const retakeBtn = document.getElementById('retakeBtn');
+const clearAllBtn = document.getElementById('clearAllBtn');
+
+
+// ---------- ambient falling-stars layer (purely decorative, isolated, device-friendly) ----------
+(function initRain() {
+  const rain = document.getElementById('rain');
+  if (!rain) return;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const isSmall = window.innerWidth < 480;
+  const isMedium = window.innerWidth < 900;
+  const count = isSmall ? 8 : isMedium ? 13 : 18; // sparse on purpose
+
+  const stars = [];
+  for (let i = 0; i < count; i++) {
+    const star = document.createElement('div');
+    star.className = 'star-drop';
+    star.style.left = Math.random() * 100 + 'vw';
+
+    const size = 5 + Math.random() * 5; // 5–10px, mixes small/big stars
+    star.style.width = size + 'px';
+    star.style.height = size + 'px';
+
+    star.style.animationDuration = `${2.5 + Math.random() * 2.5}s, ${1.2 + Math.random()}s`;
+    star.style.animationDelay = `${Math.random() * 4}s, ${Math.random() * 2}s`;
+
+    rain.appendChild(star);
+    stars.push(star);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    const state = document.hidden ? 'paused' : 'running';
+    stars.forEach(s => { s.style.animationPlayState = state; });
+  });
+})();
+
+let handDetected = false;
+let trackingActive = false;
+
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6
+});
+hands.onResults(onHandResults);
+
+function onHandResults(results) {
+  overlay.width = video.videoWidth;
+  overlay.height = video.videoHeight;
+  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+  const found = results.multiHandLandmarks && results.multiHandLandmarks.length > 0;
+  handDetected = found;
+
+  if (found) {
+    for (const landmarks of results.multiHandLandmarks) {
+      drawConnectors(overlayCtx, landmarks, HAND_CONNECTIONS, { color: '#0e0d0d', lineWidth: 3 });
+      window.drawLandmarks
+        ? drawLandmarks(overlayCtx, landmarks, { color: '#2fb6a6', lineWidth: 1, radius: 3 })
+        : null;
+    }
+    handStatus.textContent = 'Palm detected — hold steady and tap Take Photo';
+  } else {
+    handStatus.textContent = 'Show your palm to the camera';
+  }
+  takeBtn.disabled = !found;
+}
+
+// Frame loop: feeds the live video into MediaPipe while tracking is active
+async function trackingLoop() {
+  if (!trackingActive) return;
+  if (video.readyState >= 2) {
+    await hands.send({ image: video });
+  }
+  requestAnimationFrame(trackingLoop);
+}
+
 // ---------- UI helpers ----------
 
 function showError(msg) {
@@ -46,12 +134,19 @@ async function openCamera() {
       video: { facingMode: "environment" },
       audio: false
     });
+    document.querySelector('.video-wrap').style.display = 'inline-block';
     video.srcObject = stream;
     video.classList.add('active');
-    captureBtn.style.display = 'block';
     preview.classList.remove('active');
     capturedImage = null;
     generateBtn.disabled = true;
+
+    retakeBtn.style.display = 'none';
+    captureControls.style.display = 'flex';
+    handStatus.style.display = 'block';
+
+    trackingActive = true;
+    video.onloadeddata = () => trackingLoop();
   } catch (err) {
     showError("Camera access unavailable or denied. Please use the fallback file upload below.");
     fileFallback.style.display = 'block';
@@ -61,14 +156,17 @@ async function openCamera() {
 }
 
 function stopCamera() {
+  trackingActive = false;
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
     stream = null;
   }
   video.classList.remove('active');
+  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 }
 
 function capturePalm() {
+  if (!handDetected) return;
   const ctx = canvas.getContext('2d');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -76,9 +174,56 @@ function capturePalm() {
   capturedImage = canvas.toDataURL('image/jpeg', 0.5);
   preview.src = capturedImage;
   preview.classList.add('active');
-  captureBtn.style.display = 'none';
+
+  document.querySelector('.video-wrap').style.display = 'none';
+  captureControls.style.display = 'none';
+  handStatus.style.display = 'none';
+  retakeBtn.style.display = 'inline-block';
+
   stopCamera();
   generateBtn.disabled = false;
+}
+
+function retakePalm() {
+  preview.classList.remove('active');
+  capturedImage = null;
+  generateBtn.disabled = true;
+  openCamera();
+}
+
+function resetAll() {
+  // stop camera if it's running
+  stopCamera();
+
+  // form fields
+  document.getElementById('name').value = '';
+  document.getElementById('dob').value = '';
+
+  // image state
+  capturedImage = null;
+  preview.src = '';
+  preview.classList.remove('active');
+  fileFallback.value = '';
+
+  // capture UI back to initial state
+  document.querySelector('.video-wrap').style.display = 'none';
+  captureControls.style.display = 'none';
+  retakeBtn.style.display = 'none';
+  handStatus.style.display = 'block';
+  handStatus.textContent = 'Show your palm to the camera';
+  takeBtn.disabled = true;
+
+  // buttons
+  generateBtn.disabled = true;
+  openCameraBtn.disabled = false;
+
+  // results / share / errors
+  resultsDiv.innerHTML = '';
+  clearError();
+  document.getElementById('shareBox').classList.remove('active');
+  document.getElementById('qrcode').innerHTML = '';
+  document.getElementById('palmPhotoBlock').classList.remove('active');
+  document.getElementById('palmPhotoImg').src = '';
 }
 
 fileFallback.addEventListener('change', (e) => {
@@ -95,7 +240,9 @@ fileFallback.addEventListener('change', (e) => {
 });
 
 openCameraBtn.addEventListener('click', openCamera);
-captureBtn.addEventListener('click', capturePalm);
+takeBtn.addEventListener('click', capturePalm);
+retakeBtn.addEventListener('click', retakePalm);
+clearAllBtn.addEventListener('click', resetAll);
 
 // ---------- Text/markdown helpers ----------
 
@@ -153,14 +300,16 @@ function parseScores(text) {
 }
 
 // Renders a single circular percentage stat (label + ring).
+// Renders a single horizontal stat bar (label + numeric value + fill).
 function renderStat(label, value) {
   const pct = value || 0;
   return `
-    <div class="stat-item">
-      <div class="stat-circle" style="--pct:${pct}">
-        <span class="stat-value">${pct}%</span>
+    <div class="bar-row">
+      <span class="bar-label">${label}</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${pct}%"></div>
       </div>
-      <span class="stat-label">${label}</span>
+      <span class="bar-value">${pct}%</span>
     </div>
   `;
 }
@@ -170,7 +319,6 @@ function renderStat(label, value) {
 function renderResults(text) {
   const s = parseReading(text);
   const scores = parseScores(text);
-  console.log('Parsed sections:', s, scores);
 
   resultsDiv.innerHTML = `
     <div class="reading-card">
@@ -181,42 +329,39 @@ function renderResults(text) {
 
       <p class="disclaimer-top">${s['entertainment disclaimer'] || ''}</p>
 
-      <div class="stats-row">
-        ${renderStat('Health', scores['health'])}
-        ${renderStat('Wealth', scores['wealth'])}
-        ${renderStat('Love', scores['love'])}
-        ${renderStat('Luck', scores['luck'])}
-        ${renderStat('Career', scores['career'])}
-      </div>
+      <section class="section-block">
+        <h3 class="section-title">Overview</h3>
+        <div class="bars-list">
+          ${renderStat('Health', scores['health'])}
+          ${renderStat('Wealth', scores['wealth'])}
+          ${renderStat('Love', scores['love'])}
+          ${renderStat('Luck', scores['luck'])}
+          ${renderStat('Career', scores['career'])}
+        </div>
+      </section>
 
-      <div class="reading-grid">
-        ${['intuition', 'inner peace'].map(key => `
-          <div class="reading-tile">
-            <h4>${key.charAt(0).toUpperCase() + key.slice(1)}</h4>
-            <p>${mdToHtml(s[key] || '')}</p>
+      <section class="section-block">
+        <h3 class="section-title">Lucky Details</h3>
+        <div class="detail-rows">
+          <div class="detail-row">
+            <span class="detail-key">Numbers</span>
+            <span class="detail-val">${splitList(s['lucky numbers']).join(', ')}</span>
           </div>
-        `).join('')}
-      </div>
+          <div class="detail-row">
+            <span class="detail-key">Color</span>
+            <span class="detail-val">${splitList(s['lucky colors']).join(', ')}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-key">Day</span>
+            <span class="detail-val">${splitList(s['lucky days']).join(', ')}</span>
+          </div>
+        </div>
+      </section>
 
-      <div class="lucky-strip">
-        <div class="lucky-group">
-          <span class="lucky-label">Lucky Numbers</span>
-          <div class="chips">${splitList(s['lucky numbers']).map(n => `<span class="chip">${n}</span>`).join('')}</div>
-        </div>
-        <div class="lucky-group">
-          <span class="lucky-label">Lucky Colors</span>
-          <div class="chips">${splitList(s['lucky colors']).map(c => `<span class="chip">${c}</span>`).join('')}</div>
-        </div>
-        <div class="lucky-group">
-          <span class="lucky-label">Lucky Days</span>
-          <div class="chips">${splitList(s['lucky days']).map(d => `<span class="chip">${d}</span>`).join('')}</div>
-        </div>
-      </div>
-
-      <div class="spiritual">
-        <h4>Spiritual Guidance</h4>
-        <p>${mdToHtml(s['spiritual guidance'] || '')}</p>
-      </div>
+      <section class="section-block">
+        <h3 class="section-title">Spiritual Guidance</h3>
+        <p class="guidance-text">${mdToHtml(s['spiritual guidance'] || '')}</p>
+      </section>
 
       <p class="disclaimer-bottom">${s['closing disclaimer'] || ''}</p>
     </div>
@@ -310,6 +455,58 @@ async function renderShareBlock(name, dob, fullText) {
 
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
+// Cycles status text + matching constellation, eases a fake progress bar
+// toward 92% while the API call is in flight. Returns stop(onDone) — call
+// it once with the real result to snap the bar to 100% and swap in
+// renderResults() only after the fill-in finishes.
+function startLoadingAnimation() {
+  const messages = [
+    "Reading the lines of your palm…",
+    "Charting your zodiac alignment…",
+    "Consulting the constellations…",
+    "Weaving your fortune together…"
+  ];
+  let msgIndex = 0;
+  let progress = 0;
+
+  const titleEl = () => document.querySelector('.loading-title');
+  const fillEl  = () => document.querySelector('.loading-progress-fill');
+  const pctEl   = () => document.querySelector('.loading-pct');
+  const sets    = () => document.querySelectorAll('.constellation-set');
+
+  function showSet(index) {
+    sets().forEach(el => {
+      el.classList.toggle('active', Number(el.dataset.set) === index);
+    });
+  }
+
+  const msgInterval = setInterval(() => {
+    msgIndex = (msgIndex + 1) % messages.length;
+    const el = titleEl();
+    if (el) el.textContent = messages[msgIndex];
+    showSet(msgIndex);
+  }, 2400);
+
+  const progInterval = setInterval(() => {
+    // slows as it nears the 92% ceiling; never fake-completes
+    progress += (92 - progress) * 0.08 + Math.random() * 1.5;
+    progress = Math.min(progress, 92);
+    const f = fillEl(), p = pctEl();
+    if (f) f.style.width = progress + '%';
+    if (p) p.textContent = Math.round(progress) + '%';
+  }, 300);
+
+  return function stop(onDone) {
+    clearInterval(msgInterval);
+    clearInterval(progInterval);
+    const f = fillEl(), p = pctEl();
+    if (f) f.style.width = '100%';
+    if (p) p.textContent = '100%';
+    setTimeout(() => { if (onDone) onDone(); }, 300);
+  };
+}
+
+
 // ---------- Main generate flow ----------
 
 async function generateReading() {
@@ -321,16 +518,99 @@ async function generateReading() {
 
   generateBtn.disabled = true;
   openCameraBtn.disabled = true;
-  spinner.classList.add('active');
   // Show loading message immediately
 resultsDiv.innerHTML = `
   <div class="reading-card">
-    <div style="text-align: center; padding: 40px 20px;">
-      <h3 style="margin: 0 0 10px 0;">✨ Analyzing your palm...</h3>
-      <p style="opacity: 0.7; font-size: 14px; margin: 0;">This usually takes 3-5 seconds</p>
+    <div class="loading-screen">
+      <svg class="loading-globe" viewBox="0 0 200 200" aria-hidden="true">
+        <!-- background twinkle field -->
+        <circle cx="20" cy="30" r="1.1" class="bg-star" style="animation-delay:.2s"/>
+        <circle cx="175" cy="25" r="1.4" class="bg-star" style="animation-delay:.8s"/>
+        <circle cx="15" cy="160" r="1.2" class="bg-star" style="animation-delay:1.4s"/>
+        <circle cx="185" cy="150" r="1" class="bg-star" style="animation-delay:.5s"/>
+        <circle cx="30" cy="100" r="1" class="bg-star" style="animation-delay:1.8s"/>
+        <circle cx="170" cy="95" r="1.3" class="bg-star" style="animation-delay:1s"/>
+
+        <!-- shooting stars -->
+        <line x1="-10" y1="-10" x2="8" y2="-10" class="shooting-star ss-1"/>
+        <line x1="-10" y1="-10" x2="8" y2="-10" class="shooting-star ss-2"/>
+
+        <circle cx="100" cy="100" r="90" class="globe-glow"/>
+        <circle cx="100" cy="100" r="90" class="globe-outline"/>
+
+        <!-- rotating degree tick ring, echoes the page's astrolabe -->
+        <g class="tick-ring">
+          ${Array.from({length: 24}).map((_, i) =>
+            `<line x1="100" y1="4" x2="100" y2="12" transform="rotate(${i * 15} 100 100)"/>`
+          ).join('')}
+        </g>
+
+        <!-- orbit ring + moon -->
+        <g class="orbit-rotate">
+          <ellipse cx="100" cy="100" rx="108" ry="40" class="orbit-ring"/>
+          <circle cx="208" cy="100" r="3.2" class="orbit-moon"/>
+        </g>
+
+        <g class="globe-rotate">
+          <ellipse cx="100" cy="100" rx="90" ry="30" class="globe-line"/>
+          <ellipse cx="100" cy="100" rx="90" ry="55" class="globe-line"/>
+          <ellipse cx="100" cy="100" rx="45" ry="90" class="globe-line"/>
+          <ellipse cx="100" cy="100" rx="70" ry="90" class="globe-line"/>
+          <line x1="100" y1="10" x2="100" y2="190" class="globe-line"/>
+
+          <!-- four cycling constellations, one active at a time -->
+          <g class="constellation-set active" data-set="0">
+            <polyline points="60,70 90,50 130,60 150,100 120,140 75,130 60,70" class="constellation-line"/>
+            <circle cx="60" cy="70" r="2.2" class="star"/>
+            <circle cx="90" cy="50" r="1.6" class="star"/>
+            <circle cx="130" cy="60" r="2" class="star"/>
+            <circle cx="150" cy="100" r="1.8" class="star"/>
+            <circle cx="120" cy="140" r="2.4" class="star"/>
+            <circle cx="75" cy="130" r="1.6" class="star"/>
+          </g>
+
+          <g class="constellation-set" data-set="1">
+            <polyline points="70,60 100,45 130,60 115,90 85,90 70,60" class="constellation-line"/>
+            <circle cx="70" cy="60" r="1.8" class="star"/>
+            <circle cx="100" cy="45" r="2.2" class="star"/>
+            <circle cx="130" cy="60" r="1.6" class="star"/>
+            <circle cx="115" cy="90" r="2" class="star"/>
+            <circle cx="85" cy="90" r="1.8" class="star"/>
+          </g>
+
+          <g class="constellation-set" data-set="2">
+            <polyline points="55,110 80,75 100,95 120,60 145,95" class="constellation-line"/>
+            <circle cx="55" cy="110" r="1.8" class="star"/>
+            <circle cx="80" cy="75" r="2" class="star"/>
+            <circle cx="100" cy="95" r="1.6" class="star"/>
+            <circle cx="120" cy="60" r="2.4" class="star"/>
+            <circle cx="145" cy="95" r="1.8" class="star"/>
+          </g>
+
+          <g class="constellation-set" data-set="3">
+            <polyline points="100,50 130,90 115,135 85,135 70,90 100,50" class="constellation-line"/>
+            <circle cx="100" cy="50" r="2.2" class="star"/>
+            <circle cx="130" cy="90" r="1.7" class="star"/>
+            <circle cx="115" cy="135" r="1.9" class="star"/>
+            <circle cx="85" cy="135" r="1.9" class="star"/>
+            <circle cx="70" cy="90" r="1.7" class="star"/>
+          </g>
+        </g>
+      </svg>
+
+      <h3 class="loading-title">Reading the lines of your palm…</h3>
+
+      <div class="loading-progress">
+        <div class="loading-progress-fill"></div>
+      </div>
+      <span class="loading-pct">0%</span>
+
+      <p class="loading-sub">This usually takes 3–5 seconds</p>
     </div>
   </div>
 `;
+
+const stopLoadingAnim = startLoadingAnimation();
   document.getElementById('shareBox').classList.remove('active');
   document.getElementById('qrcode').innerHTML = '';
   document.getElementById('palmPhotoBlock').classList.remove('active');
@@ -356,10 +636,6 @@ Use these headings only:
 
 # Entertainment Disclaimer
 
-# Intuition
-
-# Inner Peace
-
 # Finance
 
 # Lucky Numbers
@@ -384,11 +660,8 @@ Use these headings only:
 * **Lucky Numbers:** Exactly 2 unique numbers.
 * **Lucky Colors:** Exactly 1 specific colors (e.g., Forest Green, Sapphire Blue, Burnt Orange).
 * **Lucky Days:** Exactly 1 weekdays.
-* **Intuition, Inner Peace:** Each in 1 sentence only, using simple, everyday language (no jargon or flowery wording).
-  - Intuition: one trait about their gut-instinct in decisions make it only one line only.
-  - Inner Peace: one habit or mindset that brings them calm.
 * **Percentage Scores:** Provide a percentage between 40 and 95 for each of Health, Wealth, Love, Luck, and Career, reflecting the overall tone of the reading. Format each on its own line exactly as "Label: NN%" with no extra commentary or explanation.
-* **Spiritual Guidance:** One practical suggestion inspired by traditional palmistry or astrology(1-2 line sentence, simple language).
+* **Spiritual Guidance:** One practical suggestion inspired by traditional palmistry or astrology(2-3 line sentence, simple language).
 
 At the very end, include this disclaimer:
 
@@ -485,7 +758,6 @@ At the very end, include this disclaimer:
       showError(`Error: ${err.message}`);
     }
   } finally {
-    spinner.classList.remove('active');
     generateBtn.disabled = false;
     openCameraBtn.disabled = false;
   }
