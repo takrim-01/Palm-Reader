@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palm Reading</title>
+
+    <link rel="stylesheet" href="../pages/reading.css">
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🔮 Palm Reading Report</h1>
+
+    <div id="errorBox"></div>
+
+    <div id="spinner" style="display: none;">Loading your reading...</div>
+
+    <div id="palmPhotoBlock" style="display: none;">
+        <img id="capturePalm" alt="Palm Reading">
+    </div>
+
+    <div class="card">
+
+        <h2 id="personName"></h2>
+
+        <p id="personDob"></p>
+
+        <hr>
+
+        <div id="reading"></div>
+
+    </div>
+
+    <div id="shareBox" style="display: none;">
+        <button id="printBtn">🖨️ Print Reading</button>
+    </div>
+
+</div>
+
+<script type="module" src="../pages/reading.js"></script>
+
+</body>
+
+</html>

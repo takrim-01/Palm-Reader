@@ -1,10 +1,25 @@
+import {
+  db,
+  doc,
+  getDoc,
+  collection,
+  addDoc,
+  serverTimestamp
+} from "/firebase/firebase.js";
+
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const MODEL = "gemini-3.5-flash-lite";
+const IMAGE_MODEL = "gemini-2.5-flash-image";
+
+const IMAGE_API_URL =
+  `https://generativelanguage.googleapis.com/v1beta/models/${IMAGE_MODEL}:generateContent?key=${API_KEY}`;
 
 const API_URL =
-`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+
 let stream = null;
 let capturedImage = null;
+let ghibliImage = null;
 
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
@@ -17,16 +32,25 @@ const errorBox = document.getElementById('errorBox');
 const resultsDiv = document.getElementById('results');
 const fileFallback = document.getElementById('fileFallback');
 
+// ---------- UI helpers ----------
+
 function showError(msg) {
   errorBox.innerHTML = `<div class="error">${msg}</div>`;
 }
-function clearError() { errorBox.innerHTML = ''; }
+function clearError() {
+  errorBox.innerHTML = '';
+}
+
+// ---------- Camera handling ----------
 
 async function openCamera() {
   clearError();
   openCameraBtn.disabled = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false
+    });
     video.srcObject = stream;
     video.classList.add('active');
     captureBtn.style.display = 'block';
@@ -49,6 +73,50 @@ function stopCamera() {
   video.classList.remove('active');
 }
 
+async function ghibliStylize(base64DataUrl) {
+  const base64Image = base64DataUrl.split(",")[1];
+
+  const response = await fetch(IMAGE_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          {
+            text: "Redraw this photo of a hand as a warm, hand-painted Studio-Ghibli-inspired anime illustration. Keep the hand's shape, pose, and visible palm lines clearly recognizable. Soft painterly lighting, gentle watercolor-like palette, whimsical background."
+          },
+          { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+        ]
+      }],
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+    })
+  });
+
+  if (!response.ok) throw new Error(await response.text());
+
+  const data = await response.json();
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const imgPart = parts.find(p => p.inline_data || p.inlineData);
+  const inline = imgPart?.inline_data || imgPart?.inlineData;
+  if (!inline) throw new Error("No stylized image returned.");
+
+  return `data:${inline.mime_type || inline.mimeType};base64,${inline.data}`;
+}
+
+async function stylizeCurrentPalm() {
+  if (!capturedImage) return;
+  ghibliImage = null;
+  preview.classList.add('stylizing');
+  try {
+    ghibliImage = await ghibliStylize(capturedImage);
+    preview.src = ghibliImage;
+  } catch (err) {
+    console.warn("Ghibli stylization failed, keeping original photo:", err.message);
+  } finally {
+    preview.classList.remove('stylizing');
+  }
+}
+
 function capturePalm() {
   const ctx = canvas.getContext('2d');
   canvas.width = video.videoWidth;
@@ -60,6 +128,7 @@ function capturePalm() {
   captureBtn.style.display = 'none';
   stopCamera();
   generateBtn.disabled = false;
+  stylizeCurrentPalm();
 }
 
 fileFallback.addEventListener('change', (e) => {
@@ -71,6 +140,7 @@ fileFallback.addEventListener('change', (e) => {
     preview.src = capturedImage;
     preview.classList.add('active');
     generateBtn.disabled = false;
+    stylizeCurrentPalm();
   };
   reader.readAsDataURL(file);
 });
@@ -78,7 +148,10 @@ fileFallback.addEventListener('change', (e) => {
 openCameraBtn.addEventListener('click', openCamera);
 captureBtn.addEventListener('click', capturePalm);
 
+// ---------- Text/markdown helpers ----------
+
 function mdToHtml(text) {
+  if (!text) return '';
   return text
     .replace(/^### (.*$)/gim, '<h4>$1</h4>')
     .replace(/^## (.*$)/gim, '<h3>$1</h3>')
@@ -87,23 +160,91 @@ function mdToHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-function renderResults(text) {
-  const sections = text.split(/\n(?=#{1,3}\s|\*\*[A-Za-z ]+\*\*)/g).filter(s => s.trim());
-  resultsDiv.innerHTML = '';
-  if (sections.length <= 1) {
-    resultsDiv.innerHTML = `<div class="card"><p>${mdToHtml(text)}</p></div>
-      <div class="brand-tag"><div class="mark">NAM</div><div class="tag">Palm &amp; Astrology Readings</div></div>`;
-    return;
+// Parses the model's markdown-headed response into a lookup object keyed
+// by lowercase heading text, e.g. parseReading(text)['zodiac sign'].
+function parseReading(text) {
+  const sections = {};
+  const regex = /#{1,3}\s*([^\n]+)\n([\s\S]*?)(?=\n#{1,3}\s|$)/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const key = m[1].replace(/[:*_]/g, '').trim().toLowerCase();
+    sections[key] = m[2].trim();
   }
-  sections.forEach(sec => {
-    const titleMatch = sec.match(/^#{1,3}\s*(.*)|\*\*(.*?)\*\*/);
-    const title = titleMatch ? (titleMatch[1] || titleMatch[2]) : 'Reading';
-    resultsDiv.innerHTML += `<div class="card"><h3>${title}</h3><p>${mdToHtml(sec)}</p></div>`;
-    if (/overall summary/i.test(title)) {
-      resultsDiv.innerHTML += `<div class="brand-tag"><div class="mark">NAM</div><div class="tag">Palm &amp; Astrology Readings</div></div>`;
-    }
-  });
+  return sections;
 }
+
+// Splits a comma or newline separated list (numbers/colors/days) into
+// a clean array of individual items, stripping bullet/number prefixes.
+function splitList(str) {
+  if (!str) return [];
+  return str
+    .replace(/[*_]/g, '')
+    .split(/\n|,/)
+    .map(s => s
+      .trim()
+      .replace(/^[-*]\s*/, '')        // strip leading bullet dash/asterisk
+      .replace(/^\d+[.)]\s*/, '')     // strip "1. " or "1) " numbering only
+      .trim()
+    )
+    .filter(Boolean);
+}
+
+// ---------- Reading render ----------
+
+function renderResults(text) {
+  const s = parseReading(text);
+    console.log('Parsed sections:', s);
+
+  resultsDiv.innerHTML = `
+    <div class="reading-card">
+      <div class="reading-header">
+        <div class="mark">NAM</div>
+        <div class="tag">Palm &amp; Astrology Readings</div>
+        <h2 class="zodiac">${s['zodiac sign'] || ''}</h2>
+      </div>
+
+      <p class="disclaimer-top">${s['entertainment disclaimer'] || ''}</p>
+
+      <div class="reading-overview">
+        <h3>Palm Overview</h3>
+        <p>${mdToHtml(s['palm overview'] || '')}</p>
+      </div>
+
+      <div class="reading-grid">
+        ${['personality', 'career', 'finance', 'health'].map(key => `
+          <div class="reading-tile">
+            <h4>${key.charAt(0).toUpperCase() + key.slice(1)}</h4>
+            <p>${mdToHtml(s[key] || '')}</p>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="lucky-strip">
+        <div class="lucky-group">
+          <span class="lucky-label">Numbers</span>
+          <div class="chips">${splitList(s['lucky numbers']).map(n => `<span class="chip">${n}</span>`).join('')}</div>
+        </div>
+        <div class="lucky-group">
+          <span class="lucky-label">Colors</span>
+          <div class="chips">${splitList(s['lucky colors']).map(c => `<span class="chip">${c}</span>`).join('')}</div>
+        </div>
+        <div class="lucky-group">
+          <span class="lucky-label">Days</span>
+          <div class="chips">${splitList(s['lucky days']).map(d => `<span class="chip">${d}</span>`).join('')}</div>
+        </div>
+      </div>
+
+      <div class="spiritual">
+        <h4>Spiritual Guidance</h4>
+        <p>${mdToHtml(s['spiritual guidance'] || '')}</p>
+      </div>
+
+      <p class="disclaimer-bottom">${s['closing disclaimer'] || ''}</p>
+    </div>
+  `;
+}
+
+// ---------- QR / soft copy sharing ----------
 
 // Makes a small, heavily compressed square thumbnail so a low-res version
 // of the palm photo can fit inside the QR code's strict size limit.
@@ -115,7 +256,8 @@ function makeThumbnail(srcDataUrl, size) {
       const sx = (img.width - side) / 2;
       const sy = (img.height - side) / 2;
       const c = document.createElement('canvas');
-      c.width = size; c.height = size;
+      c.width = size;
+      c.height = size;
       const ctx = c.getContext('2d');
       ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
       resolve(c.toDataURL('image/jpeg', 0.4));
@@ -124,6 +266,7 @@ function makeThumbnail(srcDataUrl, size) {
     img.src = srcDataUrl;
   });
 }
+
 function toAscii(s) {
   return s
     .replace(/[\u2018\u2019]/g, "'")
@@ -131,11 +274,12 @@ function toAscii(s) {
     .replace(/[\u2013\u2014]/g, '-');
 }
 
-// Pull just the closing "Overall Summary" section out of the full reading,
-// since the full reading is too long to fit inside a QR code.
+// Pulls a closing summary out of the full reading (falls back to the
+// spiritual guidance section, then the raw text) since the full reading
+// is too long to fit inside a QR code.
 function extractSummary(fullText) {
-  const match = fullText.match(/#{1,3}\s*Overall Summary\s*([\s\S]*?)(?=\n#{1,3}\s|$)/i);
-  let summary = match ? match[1] : fullText;
+  const s = parseReading(fullText);
+  let summary = s['spiritual guidance'] || fullText;
   summary = summary.replace(/[#*]/g, '').trim();
   if (summary.length > 350) summary = summary.slice(0, 350).trim() + '…';
   return summary;
@@ -200,6 +344,8 @@ async function renderShareBlock(name, dob, fullText) {
 
 document.getElementById('printBtn').addEventListener('click', () => window.print());
 
+// ---------- Main generate flow ----------
+
 async function generateReading() {
   clearError();
   const dob = document.getElementById('dob').value;
@@ -214,7 +360,8 @@ async function generateReading() {
   document.getElementById('shareBox').classList.remove('active');
   document.getElementById('qrcode').innerHTML = '';
   document.getElementById('palmPhotoBlock').classList.remove('active');
-const prompt = `
+
+  const prompt = `
 You are an expert traditional palmist and astrologer.
 
 Analyze the uploaded palm image carefully.
@@ -225,7 +372,13 @@ Date of Birth: ${dob}
 
 Provide a detailed traditional palm reading.
 
-Use these headings:
+Use the following structure exactly. Do not add, remove, or rename any headings.
+
+At the very beginning, include this disclaimer:
+
+"This reading is based on traditional palmistry and astrology practices and is provided for entertainment purposes only. It is not a scientific prediction and should not be used as a substitute for professional advice or important life decisions."
+
+Use these headings only:
 
 # Entertainment Disclaimer
 
@@ -233,29 +386,11 @@ Use these headings:
 
 # Zodiac Sign
 
-# Birth Element
-
-# Ruling Planet
-
-# Life Line
-
-# Head Line
-
-# Heart Line
-
-# Fate Line
-
-# Sun Line
-
-# Marriage Line
-
 # Personality
 
 # Career
 
 # Finance
-
-# Love
 
 # Health
 
@@ -267,63 +402,101 @@ Use these headings:
 
 # Spiritual Guidance
 
-# Overall Summary
+**Requirements**
 
-Keep the response professional, detailed, positive, and easy to read.
+* Use only the specified headings. Do not add any extra headings or sections.
+* Write in a professional, positive, natural, and easy-to-read tone.
+* Keep every section concise (1–2 sentences). Lucky sections should contain only the requested values.
+* Make every reading feel unique and personalized. Avoid generic horoscope clichés, repeated phrases, and vague predictions.
+* Base all interpretations on traditional palmistry and astrology. If palm or birth details are unavailable, clearly state that the reading is based only on the information provided.
+* Never claim certainty or guarantee future events.
+* Do not provide medical, legal, financial, or psychological advice, or analyze specific palm lines such as the Head Line or Life Line.
+* For **Career**, **Finance**, and **Health**, describe traditional tendencies and areas of focus instead of predicting outcomes.
+* **Lucky Numbers:** Exactly 3 unique numbers.
+* **Lucky Colors:** Exactly 2 specific colors (e.g., Forest Green, Sapphire Blue, Burnt Orange).
+* **Lucky Days:** Exactly 1 weekdays.
+* **Spiritual Guidance:** One practical suggestion inspired by traditional palmistry or astrology.
 
-Mention clearly at the beginning and end that this is based on traditional palmistry and astrology and is for entertainment purposes only.
+At the very end, include this disclaimer:
+
+"This reading follows traditional palmistry and astrology interpretations and is intended for entertainment purposes only. Your choices, actions, and circumstances play a much greater role in shaping your future than any reading."
 `;
 
   try {
-    // Remove "data:image/jpeg;base64,"
-const base64Image = capturedImage.split(",")[1];
+    // Remove "data:image/jpeg;base64," prefix
+    const base64Image = capturedImage.split(",")[1];
 
-const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
         "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
+      },
+      body: JSON.stringify({
         contents: [{
-            parts: [
-                {
-                    text: prompt
-                },
-                {
-                    inline_data: {
-                        mime_type: "image/jpeg",
-                        data: base64Image
-                    }
-                }
-            ]
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: "image/jpeg",
+                data: base64Image
+              }
+            }
+          ]
         }],
         generationConfig: {
-            temperature: 0.8,
-            topP: 0.95,
-            maxOutputTokens: 2500
+          temperature: 0.8,
+          topP: 0.95,
+          maxOutputTokens: 2500
         }
-    })
-});
+      })
+    });
 
-if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
-}
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(err);
+    }
 
-const data = await response.json();
+    const data = await response.json();
 
-const text =
-data.candidates?.[0]?.content?.parts
-?.map(p => p.text)
-.join("\n");
+    const text = data.candidates?.[0]?.content?.parts
+      ?.map(p => p.text)
+      .join("\n");
 
-if (!text)
-    throw new Error("No response received from Gemini.");
+    if (!text) throw new Error("No response received from Gemini.");
 
-renderResults(text);
-document.getElementById('palmPhotoImg').src = capturedImage;
-document.getElementById('palmPhotoBlock').classList.add('active');
-await renderShareBlock(name, dob, text);
+    renderResults(text);
+
+    const docRef = await addDoc(
+  collection(db, "palm-reading"),
+  {
+    name,
+    dob,
+    reading: text,
+    image: capturedImage,
+    imageGhibli: ghibliImage || null,
+    createdAt: serverTimestamp()
+  }
+);
+
+    console.log("Saved to Firestore:", docRef.id);
+
+    document.getElementById('palmPhotoImg').src = ghibliImage || capturedImage;
+    document.getElementById('palmPhotoBlock').classList.add('active');
+
+    const BASE_URL =
+      window.location.hostname === "localhost"
+        ? "http://localhost:5173"
+        : "https://qr-palm.web.app";
+
+    const qrURL = `${BASE_URL}/Frontend/pages/reading.html?id=${docRef.id}`;
+    console.log("QR URL:", qrURL);
+
+    drawQrOrThrow(document.getElementById("qrcode"), qrURL);
+
+    document.getElementById("shareBox").classList.add("active");
+    document.getElementById("qrNote").textContent =
+      "Scan this QR code to view the full palm reading on any device.";
+
   } catch (err) {
     showError(`Error: ${err.message}`);
   } finally {
