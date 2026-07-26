@@ -1,0 +1,144 @@
+/* ==========================================================================
+   reading.css — mobile overrides for the shared-link reading page.
+
+   Load this AFTER style.css in reading.html, using absolute paths so it
+   resolves correctly no matter how the page is opened (cold QR scan,
+   no referring page to anchor a relative path against):
+
+     <link rel="stylesheet" href="/Frontend/style.css">
+     <link rel="stylesheet" href="/Frontend/pages/reading.css">
+
+   Purpose: reading.html is opened almost exclusively via QR scan on a
+   phone, so it should never fall back to style.css's generic
+   max-width:480px stacking rule (photo / stats / text as 3 separate
+   blocks). This file keeps the top-grid a compact two-column row
+   (stats left, photo right) at every mobile width, matching the
+   side-by-side layout the desktop-generated index.html view uses.
+   ========================================================================== */
+
+/* ---------- tablet / large phone (601–768px) ---------- */
+@media (max-width: 768px) {
+  .container {
+    max-width: 100%;
+  }
+
+  header.masthead {
+    padding: 32px 0 20px;
+  }
+
+  .reading-card {
+    padding: 20px 18px 18px;
+  }
+}
+
+/* ---------- phone (≤600px) — main fix ---------- */
+@media (max-width: 600px) {
+  .top-grid {
+    grid-template-columns: 1fr 120px;
+    gap: 16px;
+    align-items: start;
+    margin-bottom: 18px;
+  }
+
+  .top-right {
+    order: 0; /* stays on the right — do not stack above stats */
+  }
+
+  .palm-photo-img {
+    width: 130px;
+    height: 165px;
+    border-radius: 8px;
+    border-width: 2px;
+    box-shadow:
+      0 0 0 3px var(--ink),
+      0 0 0 4px var(--gold-dim),
+      0 8px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  .top-right .cap {
+    font-size: 0.6rem;
+    margin-top: 8px;
+    line-height: 1.3;
+  }
+
+  .person-name {
+    font-size: 1.05rem;
+  }
+
+  .person-dob {
+    font-size: 0.68rem;
+  }
+
+  .bars-list {
+    gap: 8px;
+  }
+
+  .bar-row {
+    grid-template-columns: 48px 1fr 32px;
+    gap: 6px;
+  }
+
+  .bar-label {
+    font-size: 10px;
+  }
+
+  .bar-value {
+    font-size: 11px;
+  }
+
+  .section-title {
+    font-size: 10px;
+    margin-bottom: 10px;
+  }
+
+  .lucky-paragraph,
+  .guidance-text {
+    font-size: 13px;
+    padding: 12px 14px;
+  }
+}
+
+
+/* ---------- very small phones (≤380px, e.g. iPhone SE) ---------- */
+@media (max-width: 380px) {
+  .top-grid {
+    grid-template-columns: 1fr 96px;
+    gap: 12px;
+  }
+
+  .palm-photo-img {
+    width: 96px;
+    height: 112px;
+  }
+
+  .top-right .cap {
+    display: none; /* not enough room — image + stats take priority */
+  }
+
+  .person-name {
+    font-size: 0.95rem;
+  }
+
+  .bar-row {
+    grid-template-columns: 42px 1fr 28px;
+    gap: 5px;
+  }
+
+  .bar-label {
+    font-size: 9px;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* ---------- share box buttons: stack cleanly on narrow screens ---------- */
+@media (max-width: 480px) {
+  .share-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .share-box button {
+    width: 100%;
+  }
+}

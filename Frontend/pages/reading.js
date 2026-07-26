@@ -1,11 +1,9 @@
-import { db, doc, getDoc } from "/firebase/firebase.js";
+import { db, doc, getDoc } from "../../firebase/firebase.js";
 
 const params = new URLSearchParams(window.location.search);
 const id = params.get("id");
 
 const errorBox = document.getElementById('errorBox');
-const palmPhotoBlock = document.getElementById('palmPhotoBlock');
-const palmPhotoImg = document.getElementById('palmPhotoImg');
 const resultsDiv = document.getElementById('results');
 const shareBox = document.getElementById('shareBox');
 const printBtn = document.getElementById('printBtn');
@@ -85,9 +83,15 @@ function escapeHtml(str) {
 
 // ---------- render the same card layout as script.js ----------
 
-function renderResults(name, dob, text) {
+// AFTER
+function renderResults(name, dob, text, image) {
   const s = parseReading(text);
   const scores = parseScores(text);
+
+  const numbers = splitList(s['lucky numbers']).join(' and ');
+  const colors = splitList(s['lucky colors']).join(', ');
+  const days = splitList(s['lucky days']).join(', ');
+  const luckyParagraph = `Your lucky numbers are ${numbers}, with ${colors} as your lucky color. ${days} is your luckiest day to lean into new opportunities.`;
 
   resultsDiv.innerHTML = `
     <div class="reading-card">
@@ -96,38 +100,30 @@ function renderResults(name, dob, text) {
         <div class="tag">Palm &amp; Astrology Readings</div>
       </div>
 
-      <div class="person-name">${escapeHtml(name)}</div>
-      <div class="person-dob">DOB: ${escapeHtml(dob)}</div>
-
       <p class="disclaimer-top">${s['entertainment disclaimer'] || ''}</p>
 
-      <section class="section-block">
-        <h3 class="section-title">Overview</h3>
-        <div class="bars-list">
-          ${renderStat('Health', scores['health'])}
-          ${renderStat('Wealth', scores['wealth'])}
-          ${renderStat('Love', scores['love'])}
-          ${renderStat('Luck', scores['luck'])}
-          ${renderStat('Career', scores['career'])}
+      <div class="top-grid">
+        <div class="top-left">
+          <div class="person-info">
+            <div class="person-name">${escapeHtml(name)}</div>
+            <div class="person-dob">${escapeHtml(dob)}</div>
+          </div>
+          <div class="bars-list">
+            ${renderStat('Health', scores['health'])}
+            ${renderStat('Wealth', scores['wealth'])}
+            ${renderStat('Love', scores['love'])}
+            ${renderStat('Luck', scores['luck'])}
+            ${renderStat('Career', scores['career'])}
+          </div>
         </div>
-      </section>
+        <div class="top-right">
+          <img id="palmPhotoImg" class="palm-photo-img" src="${image || ''}" alt="Captured palm photo">
+        </div>
+      </div>
 
       <section class="section-block">
         <h3 class="section-title">Lucky Details</h3>
-        <div class="detail-rows">
-          <div class="detail-row">
-            <span class="detail-key">Numbers</span>
-            <span class="detail-val">${splitList(s['lucky numbers']).join(', ')}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-key">Color</span>
-            <span class="detail-val">${splitList(s['lucky colors']).join(', ')}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-key">Day</span>
-            <span class="detail-val">${splitList(s['lucky days']).join(', ')}</span>
-          </div>
-        </div>
+        <p class="lucky-paragraph">${luckyParagraph}</p>
       </section>
 
       <section class="section-block">
@@ -139,7 +135,6 @@ function renderResults(name, dob, text) {
     </div>
   `;
 }
-
 // ---------- load + wire up ----------
 
 if (!id) {
@@ -150,7 +145,7 @@ if (!id) {
 
 async function loadReading() {
   try {
-    const docRef = doc(db, "palm-reading", id);
+    const docRef = doc(db, "readings", id);
     const snap = await getDoc(docRef);
 
     if (!snap.exists()) {
@@ -159,12 +154,7 @@ async function loadReading() {
     }
 
     const data = snap.data();
-    renderResults(data.name, data.dob, data.reading);
-
-    if (data.image) {
-      palmPhotoImg.src = data.image;
-      palmPhotoBlock.classList.add('active');
-    }
+renderResults(data.name, data.dob, data.reading, data.image);
 
     shareBox.classList.add('active');
   } catch (err) {

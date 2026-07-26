@@ -5,7 +5,7 @@ import {
   collection,
   addDoc,
   serverTimestamp
-} from "/firebase/firebase.js";
+} from "../firebase/firebase.js";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const MODEL = "gemini-3.5-flash-lite";
@@ -19,8 +19,7 @@ let capturedImage = null;
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const preview = document.getElementById('preview');
-const openCameraBtn = document.getElementById('openCameraBtn');
-const captureBtn = document.getElementById('captureBtn');
+const captureControls = document.getElementById('captureControls');
 const generateBtn = document.getElementById('generateBtn');
 const spinner = document.getElementById('spinner');
 const errorBox = document.getElementById('errorBox');
@@ -30,43 +29,116 @@ const fileFallback = document.getElementById('fileFallback');
 const overlay = document.getElementById('overlay');
 const overlayCtx = overlay.getContext('2d');
 const handStatus = document.getElementById('handStatus');
-const captureControls = document.getElementById('captureControls');
 const takeBtn = document.getElementById('takeBtn');
 const retakeBtn = document.getElementById('retakeBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const toScreen2Btn = document.getElementById('toScreen2Btn');
+const screen1Error = document.getElementById('screen1Error');
 
+const getEventId = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('event') || 'default_event';
+};
 
-// ---------- ambient falling-stars layer (purely decorative, isolated, device-friendly) ----------
-(function initRain() {
+// ---------- Screen navigation ----------
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const target = document.getElementById(id);
+  if (target) target.classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  updateStepsTrack(id);
+}
+
+// ---------- left-rail flow tracker (purely decorative, mirrors current screen) ----------
+
+function updateStepsTrack(activeId) {
+  const order = ['screen1', 'screen2', 'screen3', 'printArea'];
+  const items = document.querySelectorAll('#stepsTrack .step-item');
+  if (!items.length) return;
+  const activeIndex = order.indexOf(activeId);
+  items.forEach(item => {
+    const forId = item.dataset.for;
+    const idx = order.indexOf(forId);
+    item.classList.remove('current', 'done');
+    if (idx === activeIndex) item.classList.add('current');
+    else if (idx < activeIndex) item.classList.add('done');
+  });
+}
+
+// ---------- top-right local clock & bottom-right session uptime ----------
+
+(function initClocks() {
+  const localClockEl = document.getElementById('localClock');
+  const uptimeEl = document.getElementById('uptimeClock');
+  const startedAt = Date.now();
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function tick() {
+    if (localClockEl) {
+      const now = new Date();
+      localClockEl.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    }
+    if (uptimeEl) {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      const h = Math.floor(elapsed / 3600);
+      const m = Math.floor((elapsed % 3600) / 60);
+      const s = elapsed % 60;
+      uptimeEl.textContent = `${pad(h)}:${pad(m)}:${pad(s)}`;
+    }
+  }
+
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ---------- ambient floating circuits (decorative, isolated, device-friendly) ----------
+
+(function initFloatingChips() {
   const rain = document.getElementById('rain');
   if (!rain) return;
 
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
+  const glyphs = [
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="7" y="7" width="10" height="10" rx="1.4"/><path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4"/></svg>',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v4h12V8M12 12v4"/></svg>',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 12h4M16 12h4M12 4v4M12 16v4"/><circle cx="12" cy="12" r="4"/></svg>',
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 4v16M18 4v16M6 8h4M14 8h4M6 16h4M14 16h4"/></svg>'
+  ];
+
   const isSmall = window.innerWidth < 480;
   const isMedium = window.innerWidth < 900;
-  const count = isSmall ? 8 : isMedium ? 13 : 18; // sparse on purpose
+  const count = isSmall ? 7 : isMedium ? 11 : 16;
 
-  const stars = [];
+  const chips = [];
   for (let i = 0; i < count; i++) {
-    const star = document.createElement('div');
-    star.className = 'star-drop';
-    star.style.left = Math.random() * 100 + 'vw';
+    const chip = document.createElement('div');
+    chip.className = 'float-chip' + (i % 3 === 0 ? ' alt' : '');
+    chip.innerHTML = glyphs[i % glyphs.length];
+    chip.style.left = Math.random() * 96 + 'vw';
 
-    const size = 5 + Math.random() * 5; // 5–10px, mixes small/big stars
-    star.style.width = size + 'px';
-    star.style.height = size + 'px';
+    const size = 16 + Math.random() * 20;
+    chip.style.width = size + 'px';
+    chip.style.height = size + 'px';
 
-    star.style.animationDuration = `${2.5 + Math.random() * 2.5}s, ${1.2 + Math.random()}s`;
-    star.style.animationDelay = `${Math.random() * 4}s, ${Math.random() * 2}s`;
+    chip.style.setProperty('--drift-x', (Math.random() * 80 - 40) + 'px');
+    chip.style.setProperty('--drift-r', (Math.random() * 140 - 70) + 'deg');
+    chip.style.setProperty('--chip-opacity', (0.25 + Math.random() * 0.35).toFixed(2));
 
-    rain.appendChild(star);
-    stars.push(star);
+    const driftDur = 14 + Math.random() * 12;
+    const fadeDur = 5 + Math.random() * 3;
+    chip.style.animationDuration = `${driftDur}s, ${fadeDur}s`;
+    chip.style.animationDelay = `${Math.random() * driftDur}s, ${Math.random() * fadeDur}s`;
+
+    rain.appendChild(chip);
+    chips.push(chip);
   }
 
   document.addEventListener('visibilitychange', () => {
     const state = document.hidden ? 'paused' : 'running';
-    stars.forEach(s => { s.style.animationPlayState = state; });
+    chips.forEach(c => { c.style.animationPlayState = state; });
   });
 })();
 
@@ -94,9 +166,9 @@ function onHandResults(results) {
 
   if (found) {
     for (const landmarks of results.multiHandLandmarks) {
-      drawConnectors(overlayCtx, landmarks, HAND_CONNECTIONS, { color: '#0e0d0d', lineWidth: 3 });
+      drawConnectors(overlayCtx, landmarks, HAND_CONNECTIONS, { color: '#5ee7ff', lineWidth: 3 });
       window.drawLandmarks
-        ? drawLandmarks(overlayCtx, landmarks, { color: '#2fb6a6', lineWidth: 1, radius: 3 })
+        ? drawLandmarks(overlayCtx, landmarks, { color: '#7c8fff', lineWidth: 1, radius: 3 })
         : null;
     }
     handStatus.textContent = 'Palm detected — hold steady and tap Take Photo';
@@ -128,7 +200,6 @@ function clearError() {
 
 async function openCamera() {
   clearError();
-  openCameraBtn.disabled = true;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "environment" },
@@ -142,6 +213,7 @@ async function openCamera() {
     generateBtn.disabled = true;
 
     retakeBtn.style.display = 'none';
+    takeBtn.style.display = 'flex';
     captureControls.style.display = 'flex';
     handStatus.style.display = 'block';
 
@@ -150,8 +222,6 @@ async function openCamera() {
   } catch (err) {
     showError("Camera access unavailable or denied. Please use the fallback file upload below.");
     fileFallback.style.display = 'block';
-  } finally {
-    openCameraBtn.disabled = false;
   }
 }
 
@@ -176,9 +246,12 @@ function capturePalm() {
   preview.classList.add('active');
 
   document.querySelector('.video-wrap').style.display = 'none';
-  captureControls.style.display = 'none';
   handStatus.style.display = 'none';
-  retakeBtn.style.display = 'inline-block';
+  
+  // Hide Take button, show only Retake button
+  captureControls.style.display = 'none';
+  takeBtn.style.display = 'none';
+  retakeBtn.style.display = 'flex';
 
   stopCamera();
   generateBtn.disabled = false;
@@ -188,42 +261,40 @@ function retakePalm() {
   preview.classList.remove('active');
   capturedImage = null;
   generateBtn.disabled = true;
+  captureControls.style.display = 'flex';
+  takeBtn.style.display = 'flex';
+  retakeBtn.style.display = 'none';
+  handStatus.style.display = 'block';
   openCamera();
 }
 
 function resetAll() {
-  // stop camera if it's running
   stopCamera();
 
-  // form fields
   document.getElementById('name').value = '';
+  document.getElementById('contact').value = '';
   document.getElementById('dob').value = '';
+  screen1Error.innerHTML = '';
 
-  // image state
   capturedImage = null;
   preview.src = '';
   preview.classList.remove('active');
   fileFallback.value = '';
 
-  // capture UI back to initial state
   document.querySelector('.video-wrap').style.display = 'none';
-  captureControls.style.display = 'none';
+  captureControls.style.display = 'flex';
   retakeBtn.style.display = 'none';
+  takeBtn.style.display = 'flex';
   handStatus.style.display = 'block';
   handStatus.textContent = 'Show your palm to the camera';
   takeBtn.disabled = true;
 
-  // buttons
   generateBtn.disabled = true;
-  openCameraBtn.disabled = false;
 
-  // results / share / errors
   resultsDiv.innerHTML = '';
   clearError();
   document.getElementById('shareBox').classList.remove('active');
   document.getElementById('qrcode').innerHTML = '';
-  document.getElementById('palmPhotoBlock').classList.remove('active');
-  document.getElementById('palmPhotoImg').src = '';
 }
 
 fileFallback.addEventListener('change', (e) => {
@@ -239,10 +310,44 @@ fileFallback.addEventListener('change', (e) => {
   reader.readAsDataURL(file);
 });
 
-openCameraBtn.addEventListener('click', openCamera);
 takeBtn.addEventListener('click', capturePalm);
 retakeBtn.addEventListener('click', retakePalm);
-clearAllBtn.addEventListener('click', resetAll);
+clearAllBtn.addEventListener('click', () => {
+  if (window.NxtGenIntro && window.NxtGenIntro.start) {
+    window.NxtGenIntro.start(() => {
+      resetAll();
+      showScreen('screen1');
+    });
+  } else {
+    // fallback in case intro script didn't load
+    resetAll();
+    showScreen('screen1');
+  }
+});
+
+toScreen2Btn.addEventListener('click', () => {
+  screen1Error.innerHTML = '';
+  const name = document.getElementById('name').value;
+  const contact = document.getElementById('contact').value;
+  const dob = document.getElementById('dob').value;
+  
+  if (!name) {
+    screen1Error.innerHTML = '<div class="error">Please enter your name.</div>';
+    return;
+  }
+  if (!contact) {
+    screen1Error.innerHTML = '<div class="error">Please enter your email or phone number.</div>';
+    return;
+  }
+  if (!dob) {
+    screen1Error.innerHTML = '<div class="error">Please enter your date of birth.</div>';
+    return;
+  }
+  
+  showScreen('screen2');
+  // Auto-open camera on screen2
+  setTimeout(() => openCamera(), 300);
+});
 
 // ---------- Text/markdown helpers ----------
 
@@ -256,8 +361,6 @@ function mdToHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-// Parses the model's markdown-headed response into a lookup object keyed
-// by lowercase heading text, e.g. parseReading(text)['zodiac sign'].
 function parseReading(text) {
   const sections = {};
   const regex = /#{1,3}\s*([^\n]+)\n([\s\S]*?)(?=\n#{1,3}\s|$)/g;
@@ -269,8 +372,6 @@ function parseReading(text) {
   return sections;
 }
 
-// Splits a comma or newline separated list (numbers/colors/days) into
-// a clean array of individual items, stripping bullet/number prefixes.
 function splitList(str) {
   if (!str) return [];
   return str
@@ -278,15 +379,13 @@ function splitList(str) {
     .split(/\n|,/)
     .map(s => s
       .trim()
-      .replace(/^[-*]\s*/, '')        // strip leading bullet dash/asterisk
-      .replace(/^\d+[.)]\s*/, '')     // strip "1. " or "1) " numbering only
+      .replace(/^[-*]\s*/, '')
+      .replace(/^\d+[.)]\s*/, '')
       .trim()
     )
     .filter(Boolean);
 }
 
-// Extracts percentage scores from the "Percentage Scores" section, e.g.
-// "Health: 82%" -> { health: 82 }. Values are clamped to 0-100.
 function parseScores(text) {
   const block = text.match(/#{1,3}\s*Percentage Scores\s*\n([\s\S]*?)(?=\n#{1,3}\s|$)/i);
   const scores = {};
@@ -299,8 +398,6 @@ function parseScores(text) {
   return scores;
 }
 
-// Renders a single circular percentage stat (label + ring).
-// Renders a single horizontal stat bar (label + numeric value + fill).
 function renderStat(label, value) {
   const pct = value || 0;
   return `
@@ -316,9 +413,14 @@ function renderStat(label, value) {
 
 // ---------- Reading render ----------
 
-function renderResults(text) {
+function renderResults(text, name, dob) {
   const s = parseReading(text);
   const scores = parseScores(text);
+
+  const numbers = splitList(s['lucky numbers']).join(' and ');
+  const colors = splitList(s['lucky colors']).join(', ');
+  const days = splitList(s['lucky days']).join(', ');
+  const luckyParagraph = `Your lucky numbers are ${numbers}, with ${colors} as your lucky color. ${days} is your luckiest day to lean into new opportunities.`;
 
   resultsDiv.innerHTML = `
     <div class="reading-card">
@@ -329,33 +431,28 @@ function renderResults(text) {
 
       <p class="disclaimer-top">${s['entertainment disclaimer'] || ''}</p>
 
-      <section class="section-block">
-        <h3 class="section-title">Overview</h3>
-        <div class="bars-list">
-          ${renderStat('Health', scores['health'])}
-          ${renderStat('Wealth', scores['wealth'])}
-          ${renderStat('Love', scores['love'])}
-          ${renderStat('Luck', scores['luck'])}
-          ${renderStat('Career', scores['career'])}
+      <div class="top-grid">
+        <div class="top-left">
+          <div class="person-info">
+            <div class="person-name">${name}</div>
+            <div class="person-dob">${dob}</div>
+          </div>
+          <div class="bars-list">
+            ${renderStat('Health', scores['health'])}
+            ${renderStat('Wealth', scores['wealth'])}
+            ${renderStat('Love', scores['love'])}
+            ${renderStat('Luck', scores['luck'])}
+            ${renderStat('Career', scores['career'])}
+          </div>
         </div>
-      </section>
+        <div class="top-right">
+          <img id="palmPhotoImg" class="palm-photo-img" src="${capturedImage || ''}" alt="Captured palm photo">
+        </div>
+      </div>
 
       <section class="section-block">
         <h3 class="section-title">Lucky Details</h3>
-        <div class="detail-rows">
-          <div class="detail-row">
-            <span class="detail-key">Numbers</span>
-            <span class="detail-val">${splitList(s['lucky numbers']).join(', ')}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-key">Color</span>
-            <span class="detail-val">${splitList(s['lucky colors']).join(', ')}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-key">Day</span>
-            <span class="detail-val">${splitList(s['lucky days']).join(', ')}</span>
-          </div>
-        </div>
+        <p class="lucky-paragraph">${luckyParagraph}</p>
       </section>
 
       <section class="section-block">
@@ -367,10 +464,9 @@ function renderResults(text) {
     </div>
   `;
 }
+
 // ---------- QR / soft copy sharing ----------
 
-// Makes a small, heavily compressed square thumbnail so a low-res version
-// of the palm photo can fit inside the QR code's strict size limit.
 function makeThumbnail(srcDataUrl, size) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -397,9 +493,6 @@ function toAscii(s) {
     .replace(/[\u2013\u2014]/g, '-');
 }
 
-// Pulls a closing summary out of the full reading (falls back to the
-// spiritual guidance section, then the raw text) since the full reading
-// is too long to fit inside a QR code.
 function extractSummary(fullText) {
   const s = parseReading(fullText);
   let summary = s['spiritual guidance'] || fullText;
@@ -414,19 +507,19 @@ function buildSoftCopyUrl(name, dob, fullText, thumbDataUrl) {
   const safe = s => toAscii(String(s || '')).replace(/[<>]/g, '');
 
   let body = `<body style="margin:0;padding:22px 18px;min-height:100vh;font-family:Segoe UI,Roboto,sans-serif;`
-    + `background:linear-gradient(135deg,#1e0f3c,#6a1b9a);color:#fff;box-sizing:border-box">`
-    + `<div style="max-width:340px;margin:0 auto;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);`
+    + `background:linear-gradient(135deg,#05070a,#101826);color:#e9edf3;box-sizing:border-box">`
+    + `<div style="max-width:340px;margin:0 auto;background:rgba(233,237,243,.06);border:1px solid rgba(94,231,255,.35);`
     + `border-radius:16px;padding:20px;text-align:center">`
-    + `<div style="font-weight:800;letter-spacing:.3em;font-size:20px;color:#e0c3fc">NAM</div>`
-    + `<div style="font-size:9px;opacity:.7;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">Palm &amp; Astrology Readings</div>`;
+    + `<div style="font-weight:800;letter-spacing:.3em;font-size:20px;color:#a6f4ff">NxtGen</div>`
+    + `<div style="font-size:9px;opacity:.7;letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px">AI Palm Insight</div>`;
 
   if (thumbDataUrl) {
-    body += `<img src="${thumbDataUrl}" style="width:76px;height:76px;border-radius:50%;object-fit:cover;border:2px solid #b967ff;margin-bottom:10px">`;
+    body += `<img src="${thumbDataUrl}" style="width:76px;height:76px;border-radius:50%;object-fit:cover;border:2px solid #5ee7ff;margin-bottom:10px">`;
   }
 
   body += `<div style="font-size:17px;font-weight:600">${safe(name)}</div>`
     + `<div style="font-size:10px;opacity:.65;margin-bottom:12px">${safe(dob)}</div>`
-    + `<div style="height:1px;background:rgba(255,255,255,.25);margin:0 0 12px"></div>`
+    + `<div style="height:1px;background:rgba(233,237,243,.18);margin:0 0 12px"></div>`
     + `<p style="font-size:12.5px;line-height:1.5;margin:0;text-align:left">${safe(summary)}</p>`
     + `<div style="font-size:8px;opacity:.55;margin-top:14px">For entertainment purposes only · full reading shown on screen</div>`
     + `</div></body>`;
@@ -440,31 +533,173 @@ function drawQrOrThrow(qrEl, url) {
     text: url,
     width: 220,
     height: 220,
-    colorDark: '#1e0f3c',
+    colorDark: '#0b1220',
     colorLight: '#ffffff',
     correctLevel: QRCode.CorrectLevel.L
   });
 }
 
-async function renderShareBlock(name, dob, fullText) {
-  const shareBox = document.getElementById('shareBox');
-  const qrNote = document.getElementById('qrNote');
-  shareBox.classList.add('active');
-  qrNote.textContent = "Scan for a soft copy on your phone. This carries your name, sign, and closing summary — your palm photo and the full reading stay here on screen.";
+document.getElementById('printBtn').addEventListener('click', () => {
+  window.print();
+});
+
+// ---------- 3D network sphere (three.js) ----------
+
+let threeRenderer = null;
+let threeScene = null;
+let threeCamera = null;
+let threeModel = null;
+let threeRAF = null;
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function createNetworkSphere() {
+  const group = new THREE.Group();
+  const radius = 1;
+
+  // Fibonacci sphere distribution — even, natural node spacing
+  const pointCount = 70;
+  const points = [];
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < pointCount; i++) {
+    const y = 1 - (i / (pointCount - 1)) * 2;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = goldenAngle * i;
+    points.push(new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r).multiplyScalar(radius));
+  }
+
+  // Nodes
+  const nodeGeo = new THREE.SphereGeometry(0.022, 8, 8);
+  points.forEach((p, idx) => {
+    const node = new THREE.Mesh(
+      nodeGeo,
+      new THREE.MeshPhongMaterial({
+        color: idx % 3 === 0 ? 0x7c8fff : 0x5ee7ff,
+        emissive: 0x1a4d5c,
+        shininess: 70
+      })
+    );
+    node.position.copy(p);
+    group.add(node);
+  });
+
+  // Connect nearby nodes — this is what reads as a "network"
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x5ee7ff, transparent: true, opacity: 0.32 });
+  const maxDist = 0.5;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      if (points[i].distanceTo(points[j]) < maxDist) {
+        const geo = new THREE.BufferGeometry().setFromPoints([points[i], points[j]]);
+        group.add(new THREE.Line(geo, lineMaterial));
+      }
+    }
+  }
+
+  // Soft inner core so the sphere reads as solid, not just a point cloud
+  const coreGeo = new THREE.SphereGeometry(radius * 0.68, 24, 24);
+  const coreMat = new THREE.MeshPhongMaterial({ color: 0x0a1420, transparent: true, opacity: 0.4, shininess: 20 });
+  group.add(new THREE.Mesh(coreGeo, coreMat));
+
+  // Faint outer wireframe shell for structure
+  const wireGeo = new THREE.IcosahedronGeometry(radius * 1.03, 1);
+  const wireMat = new THREE.MeshBasicMaterial({ color: 0x2a4a55, wireframe: true, transparent: true, opacity: 0.16 });
+  group.add(new THREE.Mesh(wireGeo, wireMat));
+
+  return group;
 }
 
-document.getElementById('printBtn').addEventListener('click', () => window.print());
+function init3DModel() {
+  if (threeRenderer || typeof THREE === 'undefined') return;
+  const modelCanvas = document.getElementById('model3dCanvas');
+  if (!modelCanvas) return;
 
-// Cycles status text + matching constellation, eases a fake progress bar
-// toward 92% while the API call is in flight. Returns stop(onDone) — call
-// it once with the real result to snap the bar to 100% and swap in
-// renderResults() only after the fill-in finishes.
+  try {
+    threeRenderer = new THREE.WebGLRenderer({
+      canvas: modelCanvas,
+      alpha: true,
+      antialias: true,
+      precision: 'lowp',
+      powerPreference: 'low-power'
+    });
+    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    threeRenderer.setClearColor(0x000000, 0);
+
+    threeScene = new THREE.Scene();
+    threeCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+    threeCamera.position.z = 3.2;
+
+    const light1 = new THREE.DirectionalLight(0x5ee7ff, 1.0);
+    light1.position.set(3, 2, 3);
+    threeScene.add(light1);
+
+    const light2 = new THREE.DirectionalLight(0x7c8fff, 0.6);
+    light2.position.set(-2, 1, 2);
+    threeScene.add(light2);
+
+    threeScene.add(new THREE.AmbientLight(0xffffff, 0.25));
+
+    threeModel = createNetworkSphere();
+    threeScene.add(threeModel);
+
+    resize3DHandler();
+  } catch (e) {
+    console.error('3D initialization failed:', e);
+    threeRenderer = null;
+  }
+}
+
+function resize3DHandler() {
+  const wrap = document.getElementById('model3dWrap');
+  if (!wrap || !threeRenderer || !threeCamera) return;
+  const size = wrap.clientWidth || 210;
+  threeRenderer.setSize(size, size, false);
+  threeCamera.aspect = 1;
+  threeCamera.updateProjectionMatrix();
+}
+
+function start3DModelScan() {
+  init3DModel();
+  if (!threeRenderer) return;
+  resize3DHandler();
+  if (threeRAF) return;
+
+  const spinSpeed = prefersReducedMotion ? 0.05 : 0.5; // radians/sec — constant, frame-rate independent
+  let lastTime = performance.now();
+
+  const animate = (now) => {
+    threeRAF = requestAnimationFrame(animate);
+    // clamp delta so returning from a backgrounded tab never causes a jump/spin-out
+    const delta = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+
+    if (threeModel) {
+      threeModel.rotation.y += spinSpeed * delta;
+      threeModel.rotation.x = Math.sin(now / 4000) * 0.1;
+    }
+    threeRenderer.render(threeScene, threeCamera);
+  };
+  threeRAF = requestAnimationFrame(animate);
+}
+
+function stop3DModelScan() {
+  if (threeRAF) {
+    cancelAnimationFrame(threeRAF);
+    threeRAF = null;
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (threeRAF) resize3DHandler();
+});
 function startLoadingAnimation() {
+  const startTime = Date.now();
+  const MIN_DISPLAY_MS = 8000; // 8 seconds for hand scanning
+
   const messages = [
     "Reading the lines of your palm…",
-    "Charting your zodiac alignment…",
-    "Consulting the constellations…",
-    "Weaving your fortune together…"
+    "Scanning palm patterns…",
+    "Analyzing your fortune…",
+    "Consulting the cosmic alignment…",
+    "Weaving your reading together…"
   ];
   let msgIndex = 0;
   let progress = 0;
@@ -472,29 +707,20 @@ function startLoadingAnimation() {
   const titleEl = () => document.querySelector('.loading-title');
   const fillEl  = () => document.querySelector('.loading-progress-fill');
   const pctEl   = () => document.querySelector('.loading-pct');
-  const sets    = () => document.querySelectorAll('.constellation-set');
-
-  function showSet(index) {
-    sets().forEach(el => {
-      el.classList.toggle('active', Number(el.dataset.set) === index);
-    });
-  }
 
   const msgInterval = setInterval(() => {
     msgIndex = (msgIndex + 1) % messages.length;
     const el = titleEl();
     if (el) el.textContent = messages[msgIndex];
-    showSet(msgIndex);
-  }, 2400);
+  }, 1800);
 
   const progInterval = setInterval(() => {
-    // slows as it nears the 92% ceiling; never fake-completes
-    progress += (92 - progress) * 0.08 + Math.random() * 1.5;
+    progress += (92 - progress) * 0.06 + Math.random() * 1.2;
     progress = Math.min(progress, 92);
     const f = fillEl(), p = pctEl();
     if (f) f.style.width = progress + '%';
     if (p) p.textContent = Math.round(progress) + '%';
-  }, 300);
+  }, 250);
 
   return function stop(onDone) {
     clearInterval(msgInterval);
@@ -502,118 +728,53 @@ function startLoadingAnimation() {
     const f = fillEl(), p = pctEl();
     if (f) f.style.width = '100%';
     if (p) p.textContent = '100%';
-    setTimeout(() => { if (onDone) onDone(); }, 300);
+
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(MIN_DISPLAY_MS - elapsed, 300);
+    setTimeout(() => { if (onDone) onDone(); }, remaining);
   };
 }
-
 
 // ---------- Main generate flow ----------
 
 async function generateReading() {
   clearError();
   const dob = document.getElementById('dob').value;
-  const name = document.getElementById('name').value || 'Seeker';
-  if (!dob) { showError('Please enter your date of birth.'); return; }
-  if (!capturedImage) { showError('Please capture or upload a palm image first.'); return; }
+  const nameInput = document.getElementById('name');
+  const contactInput = document.getElementById('contact');
+  
+  if (!nameInput || !contactInput) {
+    showError('Form elements not found. Please refresh the page.');
+    return;
+  }
+  
+  const name = nameInput.value || 'Seeker';
+  const contact = contactInput.value || 'N/A';
+  
+  if (!dob) { 
+    showError('Please enter your date of birth.'); 
+    return; 
+  }
+  if (!capturedImage) { 
+    showError('Please capture or upload a palm image first.'); 
+    return; 
+  }
 
   generateBtn.disabled = true;
-  openCameraBtn.disabled = true;
-  // Show loading message immediately
-resultsDiv.innerHTML = `
-  <div class="reading-card">
-    <div class="loading-screen">
-      <svg class="loading-globe" viewBox="0 0 200 200" aria-hidden="true">
-        <!-- background twinkle field -->
-        <circle cx="20" cy="30" r="1.1" class="bg-star" style="animation-delay:.2s"/>
-        <circle cx="175" cy="25" r="1.4" class="bg-star" style="animation-delay:.8s"/>
-        <circle cx="15" cy="160" r="1.2" class="bg-star" style="animation-delay:1.4s"/>
-        <circle cx="185" cy="150" r="1" class="bg-star" style="animation-delay:.5s"/>
-        <circle cx="30" cy="100" r="1" class="bg-star" style="animation-delay:1.8s"/>
-        <circle cx="170" cy="95" r="1.3" class="bg-star" style="animation-delay:1s"/>
 
-        <!-- shooting stars -->
-        <line x1="-10" y1="-10" x2="8" y2="-10" class="shooting-star ss-1"/>
-        <line x1="-10" y1="-10" x2="8" y2="-10" class="shooting-star ss-2"/>
+  // Reset screen3's loading UI back to its starting state, then show it
+  const loadingTitleEl = document.querySelector('.loading-title');
+  const loadingFillEl = document.querySelector('.loading-progress-fill');
+  const loadingPctEl = document.querySelector('.loading-pct');
+  if (loadingTitleEl) loadingTitleEl.textContent = 'Reading the lines of your palm…';
+  if (loadingFillEl) loadingFillEl.style.width = '0%';
+  if (loadingPctEl) loadingPctEl.textContent = '0%';
 
-        <circle cx="100" cy="100" r="90" class="globe-glow"/>
-        <circle cx="100" cy="100" r="90" class="globe-outline"/>
+  showScreen('screen3');
 
-        <!-- rotating degree tick ring, echoes the page's astrolabe -->
-        <g class="tick-ring">
-          ${Array.from({length: 24}).map((_, i) =>
-            `<line x1="100" y1="4" x2="100" y2="12" transform="rotate(${i * 15} 100 100)"/>`
-          ).join('')}
-        </g>
-
-        <!-- orbit ring + moon -->
-        <g class="orbit-rotate">
-          <ellipse cx="100" cy="100" rx="108" ry="40" class="orbit-ring"/>
-          <circle cx="208" cy="100" r="3.2" class="orbit-moon"/>
-        </g>
-
-        <g class="globe-rotate">
-          <ellipse cx="100" cy="100" rx="90" ry="30" class="globe-line"/>
-          <ellipse cx="100" cy="100" rx="90" ry="55" class="globe-line"/>
-          <ellipse cx="100" cy="100" rx="45" ry="90" class="globe-line"/>
-          <ellipse cx="100" cy="100" rx="70" ry="90" class="globe-line"/>
-          <line x1="100" y1="10" x2="100" y2="190" class="globe-line"/>
-
-          <!-- four cycling constellations, one active at a time -->
-          <g class="constellation-set active" data-set="0">
-            <polyline points="60,70 90,50 130,60 150,100 120,140 75,130 60,70" class="constellation-line"/>
-            <circle cx="60" cy="70" r="2.2" class="star"/>
-            <circle cx="90" cy="50" r="1.6" class="star"/>
-            <circle cx="130" cy="60" r="2" class="star"/>
-            <circle cx="150" cy="100" r="1.8" class="star"/>
-            <circle cx="120" cy="140" r="2.4" class="star"/>
-            <circle cx="75" cy="130" r="1.6" class="star"/>
-          </g>
-
-          <g class="constellation-set" data-set="1">
-            <polyline points="70,60 100,45 130,60 115,90 85,90 70,60" class="constellation-line"/>
-            <circle cx="70" cy="60" r="1.8" class="star"/>
-            <circle cx="100" cy="45" r="2.2" class="star"/>
-            <circle cx="130" cy="60" r="1.6" class="star"/>
-            <circle cx="115" cy="90" r="2" class="star"/>
-            <circle cx="85" cy="90" r="1.8" class="star"/>
-          </g>
-
-          <g class="constellation-set" data-set="2">
-            <polyline points="55,110 80,75 100,95 120,60 145,95" class="constellation-line"/>
-            <circle cx="55" cy="110" r="1.8" class="star"/>
-            <circle cx="80" cy="75" r="2" class="star"/>
-            <circle cx="100" cy="95" r="1.6" class="star"/>
-            <circle cx="120" cy="60" r="2.4" class="star"/>
-            <circle cx="145" cy="95" r="1.8" class="star"/>
-          </g>
-
-          <g class="constellation-set" data-set="3">
-            <polyline points="100,50 130,90 115,135 85,135 70,90 100,50" class="constellation-line"/>
-            <circle cx="100" cy="50" r="2.2" class="star"/>
-            <circle cx="130" cy="90" r="1.7" class="star"/>
-            <circle cx="115" cy="135" r="1.9" class="star"/>
-            <circle cx="85" cy="135" r="1.9" class="star"/>
-            <circle cx="70" cy="90" r="1.7" class="star"/>
-          </g>
-        </g>
-      </svg>
-
-      <h3 class="loading-title">Reading the lines of your palm…</h3>
-
-      <div class="loading-progress">
-        <div class="loading-progress-fill"></div>
-      </div>
-      <span class="loading-pct">0%</span>
-
-      <p class="loading-sub">This usually takes 3–5 seconds</p>
-    </div>
-  </div>
-`;
-
-const stopLoadingAnim = startLoadingAnimation();
+  const stopLoadingAnim = startLoadingAnimation();
   document.getElementById('shareBox').classList.remove('active');
   document.getElementById('qrcode').innerHTML = '';
-  document.getElementById('palmPhotoBlock').classList.remove('active');
 
   const prompt = `
 You are an expert traditional palmist and astrologer.
@@ -654,7 +815,16 @@ Use these headings only:
 * Write in a professional, positive, natural, and easy-to-read tone.
 * Keep every section concise (1–2 sentences). Lucky sections should contain only the requested values.
 * Make every reading feel unique and personalized. Avoid generic horoscope clichés, repeated phrases, and vague predictions.
-* Base all interpretations on traditional palmistry and astrology. If palm or birth details are unavailable, clearly state that the reading is based only on the information provided.
+* Before the Entertainment Disclaimer, write one short personalized sentence.
+
+Mention the person's name and date of birth naturally, and state that the reading has been prepared using their palm image and birth details according to traditional palmistry and astrology.
+
+Do not mention image quality, visibility, confidence, limitations, AI, or how the analysis was performed.
+
+Example style:
+"{name}, this traditional reading has been prepared using your palm image and your birth date ({dob}), combining palmistry and astrology to provide personalized insights."
+
+Keep it to one simple sentence.
 * Never claim certainty or guarantee future events.
 * Do not provide medical, legal, financial, or psychological advice, or analyze specific palm lines such as the Head Line or Life Line.
 * **Lucky Numbers:** Exactly 2 unique numbers.
@@ -668,17 +838,15 @@ At the very end, include this disclaimer:
 "This reading follows traditional palmistry and astrology interpretations and is intended for entertainment purposes only. Your choices, actions, and circumstances play a much greater role in shaping your future than any reading."
 `;
 
-  // Create abort controller for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    // Remove "data:image/jpeg;base64," prefix
     const base64Image = capturedImage.split(",")[1];
 
     const response = await fetch(API_URL, {
       method: "POST",
-      signal: controller.signal,  // Add timeout support
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json"
       },
@@ -702,7 +870,7 @@ At the very end, include this disclaimer:
       })
     });
 
-    clearTimeout(timeoutId);  // Clear timeout if successful
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const err = await response.text();
@@ -717,23 +885,32 @@ At the very end, include this disclaimer:
 
     if (!text) throw new Error("No response received from Gemini.");
 
-    renderResults(text);
+    stopLoadingAnim(() => {
+
+      renderResults(text, name, dob);
+      showScreen('printArea');
+    });
+
+    console.log("Saving to Firestore...");
+
+    const userId = `${name.replace(/\s+/g, '_')}_${Date.now()}`;
+    const eventId = getEventId();
 
     const docRef = await addDoc(
-      collection(db, "palm-reading"),
+      collection(db, "readings"),
       {
         name,
+        contact,
         dob,
         reading: text,
         image: capturedImage,
+        eventId,
+        userId,
         createdAt: serverTimestamp()
       }
     );
-
-    console.log("Saved to Firestore:", docRef.id);
-
-    document.getElementById('palmPhotoImg').src = capturedImage;
-    document.getElementById('palmPhotoBlock').classList.add('active');
+    console.log("✅ Saved!");
+    console.log("Document ID:", docRef.id);
 
     const BASE_URL =
       window.location.hostname === "localhost"
@@ -745,12 +922,20 @@ At the very end, include this disclaimer:
 
     drawQrOrThrow(document.getElementById("qrcode"), qrURL);
 
-    document.getElementById("shareBox").classList.add("active");
-    document.getElementById("qrNote").textContent =
-      "Scan this QR code to view the full palm reading on any device.";
+    const shareBox = document.getElementById("shareBox");
+    if (shareBox) {
+      shareBox.classList.add("active");
+    }
+    
+    const qrNote = document.getElementById("qrNote");
+    if (qrNote) {
+      qrNote.textContent = "Scan this QR code to view the full palm reading on any device.";
+    }
 
   } catch (err) {
-    clearTimeout(timeoutId);  // Clear timeout on error
+    clearTimeout(timeoutId);
+    stopLoadingAnim();
+    showScreen('screen2');
 
     if (err.name === 'AbortError') {
       showError('Request took too long (over 30 seconds). Please check your internet and try again.');
@@ -759,7 +944,6 @@ At the very end, include this disclaimer:
     }
   } finally {
     generateBtn.disabled = false;
-    openCameraBtn.disabled = false;
   }
 }
 

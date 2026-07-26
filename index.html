@@ -2,126 +2,314 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Palm Reading using Grok AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>NxtGen — AI Palm Insight</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <link rel="stylesheet" href="Frontend/style.css">
 </head>
 <body>
+  <!-- ===== Intro splash video — plays once, then reveals the app ===== -->
+<div id="introLoader" class="intro-loader">
+  <video
+    id="introVideo"
+    class="intro-video"
+    src="Frontend/videos/firstpage-loading.mp4"
+    autoplay
+    muted
+    playsinline
+    preload="auto"
+  ></video>
+  <button id="introSkip" class="intro-skip" type="button" aria-label="Skip intro">Skip</button>
+</div>
+<script>
+(function () {
+  var loader = document.getElementById('introLoader');
+  var video = document.getElementById('introVideo');
+  var skipBtn = document.getElementById('introSkip');
+  var done = false;
+  var onCompleteCallback = null;
+  var safetyTimer = null;
 
-<div class="sky" aria-hidden="true"></div>
-<svg class="astrolabe" viewBox="0 0 400 400" aria-hidden="true">
-  <circle cx="200" cy="200" r="188" fill="none" stroke="#c9a227" stroke-width="1"/>
-  <circle cx="200" cy="200" r="150" fill="none" stroke="#c9a227" stroke-width="1"/>
-  <circle cx="200" cy="200" r="112" fill="none" stroke="#c9a227" stroke-width="0.6"/>
-  <g stroke="#c9a227" stroke-width="1">
-    <line x1="200" y1="12" x2="200" y2="40"/>
-    <line x1="200" y1="360" x2="200" y2="388"/>
-    <line x1="12" y1="200" x2="40" y2="200"/>
-    <line x1="360" y1="200" x2="388" y2="200"/>
-  </g>
-  <g stroke="#c9a227" stroke-width="0.5">
-    <!-- degree ticks -->
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(30 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(60 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(120 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(150 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(210 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(240 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(300 200 200)"/>
-    <line x1="200" y1="50" x2="200" y2="60" transform="rotate(330 200 200)"/>
-  </g>
-  <circle cx="200" cy="200" r="4" fill="#c9a227"/>
+  function endIntro() {
+    if (done) return;
+    done = true;
+    clearTimeout(safetyTimer);
+    loader.classList.add('hide');
+    document.documentElement.classList.remove('intro-locked');
+    setTimeout(function () {
+      loader.style.display = 'none'; // hide, don't remove — needed for replay
+      var cb = onCompleteCallback;
+      onCompleteCallback = null;
+      if (cb) cb();
+    }, 650);
+  }
+
+  function startIntro(onComplete) {
+    onCompleteCallback = onComplete || null;
+    done = false;
+
+    loader.style.display = 'flex';
+    void loader.offsetWidth; // force reflow so the 'hide' removal transitions properly
+    loader.classList.remove('hide');
+    document.documentElement.classList.add('intro-locked');
+
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      endIntro();
+      return;
+    }
+
+    try { video.currentTime = 0; } catch (e) {}
+
+    var playPromise = video.play();
+    if (playPromise && playPromise.catch) {
+      playPromise.catch(endIntro);
+    }
+
+    safetyTimer = setTimeout(endIntro, 12000);
+  }
+
+  video.addEventListener('ended', endIntro);
+  video.addEventListener('error', endIntro);
+  skipBtn.addEventListener('click', endIntro);
+
+  // Expose so other scripts (script.js) can trigger a replay
+  window.NxtGenIntro = { start: startIntro };
+
+  // Play once automatically on first page load
+  startIntro();
+})();
+</script>
+<div class="grid-bg" aria-hidden="true"></div>
+
+<svg class="circuit-bg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+  <path class="trace" d="M0,120 H260 V40 H620 V180 H1000"/>
+  <path class="trace" d="M0,340 H160 V420 H460 V300 H1000"/>
+  <path class="trace" d="M0,560 H320 V640 H700 V520 H1000"/>
+  <path class="trace" d="M0,760 H220 V880 H540 V780 H1000"/>
+  <path class="trace" d="M120,0 V220 H60 V1000"/>
+  <path class="trace" d="M520,0 V160 H860 V1000"/>
+  <path class="trace" d="M880,0 V300 H940 V1000"/>
+
+  <path class="trace-glow" d="M0,120 H260 V40 H620 V180 H1000"/>
+  <path class="trace-glow alt" d="M0,560 H320 V640 H700 V520 H1000"/>
+  <path class="trace-glow" d="M520,0 V160 H860 V1000"/>
+  <path class="trace-glow alt" d="M0,760 H220 V880 H540 V780 H1000"/>
+
+  <circle class="node" cx="260" cy="40" r="3"/>
+  <circle class="node alt" cx="620" cy="180" r="3"/>
+  <circle class="node" cx="160" cy="420" r="3"/>
+  <circle class="node alt" cx="460" cy="300" r="3"/>
+  <circle class="node" cx="320" cy="640" r="3"/>
+  <circle class="node alt" cx="700" cy="520" r="3"/>
+  <circle class="node" cx="220" cy="880" r="3"/>
+  <circle class="node alt" cx="540" cy="780" r="3"/>
+  <circle class="node" cx="860" cy="160" r="3"/>
+  <circle class="node alt" cx="940" cy="300" r="3"/>
 </svg>
 
 <div class="rain" id="rain" aria-hidden="true"></div>
 
-<div class="container">
-
-  <header class="masthead">
-    <p class="kicker">Est. by lamplight &amp; starlight</p>
-    <h1>Palm Reading</h1>
-    <p class="subtitle">Traditional palmistry &amp; astrology — for entertainment purposes only</p>
-  </header>
-
-  <div class="glass">
-    <div class="step-head">
-      <span class="deg">01</span>
-      <h2>Your details</h2>
-    </div>
-    <p class="step-note">The chart needs your name and birth date to draw a reading.</p>
-
-    <label for="name">Name</label>
-    <input type="text" id="name" placeholder="Your name" required>
-    <label for="dob">Date of Birth (required)</label>
-    <input type="date" id="dob" required>
-  </div>
-
-  <div class="glass">
-    <div class="step-head">
-      <span class="deg">02</span>
-      <h2>Capture your palm</h2>
-    </div>
-    <p class="step-note">Hold your palm flat and well-lit, then take the photo.</p>
-
-    <button id="openCameraBtn">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
-  Open Camera
-</button>
-
-<div class="video-wrap" style="position:relative; display:inline-block;">
-  <video id="video" autoplay playsinline muted></video>
-  <canvas id="overlay" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+<div class="corner corner-tl">
+  <span class="pulse-dot" aria-hidden="true"></span>
+  <span class="corner-text">NxtGen</span>
+</div>
+<div class="corner corner-tr">
+  <span class="corner-text">AI ENGINE <span class="live-tag">ACTIVE</span> · <span id="localClock">--:--:--</span></span>
+</div>
+<div class="corner corner-bl">
+  <span class="corner-text">NxtGen — AI Palm Insight</span>
+</div>
+<div class="corner corner-br">
+  <span class="corner-text">UPTIME <span id="uptimeClock">00:00:00</span></span>
 </div>
 
-<p id="handStatus" class="step-note">Show your palm to the camera</p>
+<div class="app-shell">
 
-<div id="captureControls" style="display:none; gap:10px;">
-  <button id="takeBtn" disabled>Take Photo</button>
-</div>
-<button id="retakeBtn" style="display:none;">Retake</button>
-
-<canvas id="canvas" style="display:none;"></canvas>
-<img id="preview" class="preview" alt="Captured palm preview">
-<input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none; margin-top:10px;">
-  </div>
-
-  <button id="generateBtn" disabled>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4M12 16v4M4 12h4M16 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M17.7 6.3l-2.8 2.8M9.1 14.9l-2.8 2.8"/></svg>
-    Generate Palm Reading
-  </button>
-  <div class="spinner" id="spinner"></div>
-  <div id="errorBox"></div>
-
-  <div id="printArea">
-    <div class="palm-photo-block" id="palmPhotoBlock">
-      <img id="palmPhotoImg" src="" alt="Captured palm photo">
-      <div class="cap">Palm scanned for this reading</div>
+  <!-- ===== left rail: flow tracker ===== -->
+  <aside class="rail rail-left" aria-hidden="true">
+    <div class="rail-label">Reading Flow</div>
+    <div class="steps-track" id="stepsTrack">
+      <div class="step-item current" data-for="screen1">
+        <span class="step-num">01</span>
+        <span class="step-copy">
+          <span class="step-title">Details</span>
+          <span class="step-sub">Name &amp; birth date</span>
+        </span>
+      </div>
+      <div class="step-item" data-for="screen2">
+        <span class="step-num">02</span>
+        <span class="step-copy">
+          <span class="step-title">Capture</span>
+          <span class="step-sub">Palm scan</span>
+        </span>
+      </div>
+      <div class="step-item" data-for="screen3">
+        <span class="step-num">03</span>
+        <span class="step-copy">
+          <span class="step-title">Analysis</span>
+          <span class="step-sub">AI processing</span>
+        </span>
+      </div>
+      <div class="step-item" data-for="printArea">
+        <span class="step-num">04</span>
+        <span class="step-copy">
+          <span class="step-title">Reading</span>
+          <span class="step-sub">Your insight</span>
+        </span>
+      </div>
     </div>
-    <div id="results"></div>
+  </aside>
 
-    <div class="glass share-box" id="shareBox">
-      <button id="printBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
-        Print This Reading
-      </button>
-      <div class="row">
-        <div id="qrcode"></div>
-        <div class="qr-note" id="qrNote">Scan for a soft copy on your phone.</div>
+  <!-- ===== center: the actual app ===== -->
+  <main class="container">
+
+    <!-- ================= SCREEN 1 : details ================= -->
+    <div id="screen1" class="screen active">
+      <header class="masthead">
+        <p class="kicker">Signal locked &middot; palm to pattern</p>
+        <h1>NxtGen -- AI Palm Reading</h1>
+        <p class="subtitle">Traditional palmistry &amp; astrology, read through an AI lens — for entertainment purposes only</p>
+      </header>
+
+      <div class="glass">
+        <div class="step-head">
+          <span class="deg">01</span>
+          <h2>Your details</h2>
+        </div>
+        <p class="step-note">The chart needs your name, contact, and birth date to draw a reading.</p>
+
+        <label for="name">Name</label>
+        <input type="text" id="name" placeholder="Your name" required>
+
+        <label for="contact">Email or Phone</label>
+        <input type="text" id="contact" placeholder="your@email.com or +1234567890" required>
+
+        <label for="dob">Date of Birth (required)</label>
+        <input type="date" id="dob" required>
+
+        <div id="screen1Error"></div>
+
+        <button id="toScreen2Btn" type="button">
+          Continue
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
       </div>
     </div>
 
-    <p class="disclaimer">This reading is based on traditional palmistry and astrology for entertainment purposes only and is not scientifically validated.</p>
-  </div>
+    <!-- ================= SCREEN 2 : camera ================= -->
+    <div id="screen2" class="screen">
+      <div class="glass glass-camera">
+        <div class="step-head">
+          <span class="deg">02</span>
+          <h2>Capture your palm</h2>
+        </div>
+        <p class="step-note">Hold your palm flat and well-lit, then take the photo.</p>
 
-  <button id="clearAllBtn" type="button">Clear All</button>
+        <div class="video-wrap" style="position:relative; display:inline-block; width: 100%;">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="overlay" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+        </div>
 
-  <footer class="brand-tag">
-    <div class="mark">OBSERVATORY</div>
-    <div class="tag">Palmistry &amp; Astrology Atelier</div>
-  </footer>
+        <p id="handStatus" class="step-note">Show your palm to the camera</p>
+
+        <div id="captureControls" class="capture-button-row">
+          <button id="takeBtn" class="btn-take" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            Take Photo
+          </button>
+        </div>
+
+        <button id="retakeBtn" class="btn-retake btn-generate-style" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M21 17v-6h-6"/><path d="M8 5c-1.5 1-3 3-3 7 0 5.3 3 8 8 8 5.3 0 8-3 8-8s-2-6-4-7"/></svg>
+          Retake Photo
+        </button>
+
+        <canvas id="canvas" style="display:none;"></canvas>
+        <img id="preview" class="preview" alt="Captured palm preview">
+        <input type="file" id="fileFallback" accept="image/*" capture="environment" style="display:none; margin-top:10px;">
+      </div>
+
+      <button id="generateBtn" disabled class="btn-generate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4M12 16v4M4 12h4M16 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M17.7 6.3l-2.8 2.8M9.1 14.9l-2.8 2.8"/></svg>
+        Generate Palm Reading
+      </button>
+      <div class="spinner" id="spinner"></div>
+      <div id="errorBox"></div>
+    </div>
+
+    <!-- ================= SCREEN 3 : loading ================= -->
+    <div id="screen3" class="screen">
+      <div class="loading-shell">
+        <div class="loading-screen">
+
+          <div class="loading-stack" id="loadingStack">
+  <img src="Frontend/images/black-palm.jpeg" class="stack-img img-base" alt="">
+  <img src="Frontend/images/cyan-palm.jpeg" class="stack-img img-cyan" alt="">
+  <img src="Frontend/images/hand-lines.jpeg" class="stack-img img-lines" alt="">
+  <img src="Frontend/images/red-dot.jpeg" class="stack-img img-dots" alt="">
+</div>
+          <h3 class="loading-title">Reading the lines of your palm…</h3>
+
+          <div class="loading-progress">
+            <div class="loading-progress-fill"></div>
+          </div>
+          <span class="loading-pct">0%</span>
+
+          <p class="loading-sub">This usually takes 3–5 seconds</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= SCREEN 4 : results ================= -->
+    <div id="printArea" class="screen">
+      <div id="results"></div>
+
+      <div class="glass share-box" id="shareBox">
+        <button id="printBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2M6 14h12v7H6z"/></svg>
+          Print This Reading
+        </button>
+
+        <div class="qr-section">
+          <h3>Your QR Soft Copy</h3>
+          <p id="qrNote" class="qr-note">Scan this QR code to view the full palm reading on any device.</p>
+          <div class="qr-card">
+              <div id="qrcode"></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="disclaimer">This reading is based on traditional palmistry and astrology for entertainment purposes only and is not scientifically validated.</p>
+
+      <button id="clearAllBtn" type="button">Start Again</button>
+    </div>
+
+  </main>
+
+  <!-- ===== right rail: AI pulse panel ===== -->
+  <aside class="rail rail-right" aria-hidden="true">
+    <div class="rail-label">Neural Activity</div>
+    <div class="pulse-panel">
+      <svg class="pulse-wave" viewBox="0 0 200 60" preserveAspectRatio="none">
+        <path class="pulse-line" d="M0,30 L20,30 L28,10 L36,50 L44,18 L52,30 L70,30 L78,6 L86,54 L94,30 L200,30"/>
+      </svg>
+      <div class="pulse-readout">
+        <span class="pulse-readout-label">Pattern confidence</span>
+        <span class="pulse-readout-value" id="pulseValue">98.2%</span>
+      </div>
+    </div>
+
+    <div class="orb-cluster" aria-hidden="true">
+      <span class="orb orb-a"></span>
+      <span class="orb orb-b"></span>
+      <span class="orb orb-c"></span>
+    </div>
+    <p class="telemetry-caption">Ambient signal — embellishment only, no live telemetry.</p>
+  </aside>
 
 </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script type="module" src="Frontend/script.js"></script>
